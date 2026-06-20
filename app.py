@@ -15,8 +15,12 @@ from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
-# Allow all origins - yeh public proxy hai, koi sensitive data yahan store nahi hota
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Allow all origins on ALL routes (including /health and /) - yeh public proxy
+# hai, koi sensitive data yahan store nahi hota. Pehle sirf /api/* par CORS
+# tha jiski wajah se browser se /health fetch() CORS error deta tha (address
+# bar se direct kholna kaam karta tha kyunki navigation requests CORS check
+# nahi karte, lekin JS fetch() karta hai).
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 UPSTOX_BASE = "https://api.upstox.com"
 
