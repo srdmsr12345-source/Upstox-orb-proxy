@@ -1,0 +1,85 @@
+"""
+Upstox CORS Proxy Server
+=========================
+Yeh chhota Flask server browser aur Upstox API ke beech proxy ka kaam karta hai.
+Browser is server ko call karta hai, yeh server Upstox ko call karta hai
+(server-to-server call mein CORS restriction nahi lagti), aur response
+wapas browser ko CORS headers ke saath bhej deta hai.
+
+Koi data store nahi hota - access token har request ke saath browser se
+aata hai aur seedha Upstox ko forward ho jaata hai.
+"""
+
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
+import requests
+
+app = Flask(__name__)
+# Allow all origins - yeh public proxy hai, koi sensitive data yahan store nahi hota
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+UPSTOX_BASE = "https://api.upstox.com"
+
+
+def forward_request(path, method="GET"):
+    """Upstox ko request forward karta hai, original headers aur query params ke saath."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header:
+        return jsonify({"status": "error", "message": "Authorization header missing"}), 401
+
+    url = f"{UPSTOX_BASE}/{path}"
+    headers = {
+        "Authorization": auth_header,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        if method == "GET":
+            resp = requests.get(url, headers=headers, params=request.args, timeout=20)
+        else:
+            resp = requests.post(url, headers=headers, json=request.get_json(silent=True), timeout=20)
+
+        # Forward Upstox's response (status code + body) as-is
+        return Response(
+            resp.content,
+            status=resp.status_code,
+            content_type=resp.headers.get("Content-Type", "application/json"),
+        )
+    except requests.exceptions.Timeout:
+        return jsonify({"status": "error", "message": "Upstox API timeout"}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": str(e)}), 502
+
+
+@app.route("/api/v2/market-quote/ohlc", methods=["GET"])
+def ohlc():
+    return forward_request("v2/market-quote/ohlc?" + request.query_string.decode())
+
+
+@app.route("/api/v2/market-quote/ltp", methods=["GET"])
+def ltp():
+    return forward_request("v2/market-quote/ltp?" + request.query_string.decode())
+
+
+@app.route("/api/v2/historical-candle/intraday/<path:instrument_key>/<interval>", methods=["GET"])
+def intraday_candle(instrument_key, interval):
+    return forward_request(f"v2/historical-candle/intraday/{instrument_key}/{interval}")
+
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "status": "ok",
+        "message": "Upstox CORS Proxy is running",
+        "usage": "Point your scanner's API_BASE to this URL + /api"
+    })
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "healthy"})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
