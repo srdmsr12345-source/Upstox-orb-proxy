@@ -25,8 +25,13 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 UPSTOX_BASE = "https://api.upstox.com"
 
 
-def forward_request(path, method="GET"):
-    """Upstox ko request forward karta hai, original headers aur query params ke saath."""
+def forward_request(path):
+    """Upstox ko request forward karta hai, original query params ke saath.
+    Query params sirf yahan ek baar add hote hain (request.args se) -
+    pehle yeh bug tha ki route handler bhi query string jodta tha aur
+    yeh function bhi params= se jodta tha, jisse params duplicate ho
+    jaate the (e.g. interval=1d,1d) aur Upstox 'Invalid interval' error deta tha.
+    """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header:
         return jsonify({"status": "error", "message": "Authorization header missing"}), 401
@@ -35,16 +40,10 @@ def forward_request(path, method="GET"):
     headers = {
         "Authorization": auth_header,
         "Accept": "application/json",
-        "Content-Type": "application/json",
     }
 
     try:
-        if method == "GET":
-            resp = requests.get(url, headers=headers, params=request.args, timeout=20)
-        else:
-            resp = requests.post(url, headers=headers, json=request.get_json(silent=True), timeout=20)
-
-        # Forward Upstox's response (status code + body) as-is
+        resp = requests.get(url, headers=headers, params=request.args, timeout=20)
         return Response(
             resp.content,
             status=resp.status_code,
@@ -58,12 +57,12 @@ def forward_request(path, method="GET"):
 
 @app.route("/api/v2/market-quote/ohlc", methods=["GET"])
 def ohlc():
-    return forward_request("v2/market-quote/ohlc?" + request.query_string.decode())
+    return forward_request("v2/market-quote/ohlc")
 
 
 @app.route("/api/v2/market-quote/ltp", methods=["GET"])
 def ltp():
-    return forward_request("v2/market-quote/ltp?" + request.query_string.decode())
+    return forward_request("v2/market-quote/ltp")
 
 
 @app.route("/api/v2/historical-candle/intraday/<path:instrument_key>/<interval>", methods=["GET"])
