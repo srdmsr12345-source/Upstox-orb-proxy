@@ -317,4 +317,612 @@ function saveProxy(){
   if(!val){showProxyStatus('err','Proxy URL khali hai, kuch paste karein');return}
   val=val.replace(/\/+$/,'');
   if(!val.startsWith('http')){showProxyStatus('err','URL https:// se shuru honi chahiye');return}
-  PROXY_BASE=
+  PROXY_BASE=val;
+  try{localStorage.setItem('upstox_proxy',val);}catch(e){}
+  showProxyStatus('ok','✓ Saved: '+val);
+  document.getElementById('proxyInput').value='';
+  updateBookmarkLink();
+}
+function showProxyStatus(type,msg){
+  const el=document.getElementById('proxyStatus');
+  el.className='tb-status '+type;
+  el.textContent=msg;
+}
+function showCurrentProxy(){
+  if(PROXY_BASE){
+    showProxyStatus('info','Abhi saved hai: '+PROXY_BASE+' (badalna ho to naya URL paste karke Save karein)');
+    document.getElementById('proxyInput').placeholder=PROXY_BASE;
+  }
+}
+
+function saveToken(){
+  const val=document.getElementById('tokenInput').value.trim();
+  if(!val){showTbStatus('err','Token khali hai, kuch paste karein');return}
+  ACCESS_TOKEN=val;
+  try{localStorage.setItem('upstox_token',val);}catch(e){}
+  showTbStatus('ok','✓ Token saved! ('+val.length+' characters) Ab Scan dabao.');
+  document.getElementById('tokenInput').value='';
+  updateBookmarkLink();
+}
+function showTbStatus(type,msg){
+  const el=document.getElementById('tbStatus');
+  el.className='tb-status '+type;
+  el.textContent=msg;
+}
+function updateBookmarkLink(){
+  // Jab dono proxy aur token save ho jayein, ek complete URL banate hain
+  // jisme dono query params mein already hon - isse user ek baar yeh URL
+  // copy/bookmark kar sakta hai aur agli baar bina dobara type kiye
+  // seedha is link se scanner khol sakta hai, chahe localStorage reset
+  // ho jaye (jaisa "Open with Chrome" karne par kabhi hota hai).
+  const box=document.getElementById('bookmarkBox');
+  if(!box) return;
+  if(PROXY_BASE && ACCESS_TOKEN){
+    const baseUrl = window.location.origin + window.location.pathname;
+    const fullUrl = baseUrl + '?proxy=' + encodeURIComponent(PROXY_BASE) + '&token=' + encodeURIComponent(ACCESS_TOKEN);
+    box.style.display='flex';
+    box.querySelector('#bookmarkUrl').value = fullUrl;
+  }
+}
+function copyBookmarkLink(){
+  const input=document.getElementById('bookmarkUrl');
+  input.select();
+  input.setSelectionRange(0, 99999);
+  try{
+    document.execCommand('copy');
+    showToast('✓ Link copy ho gaya! Chrome mein bookmark bana lo');
+  }catch(e){
+    showToast('Copy nahi hua, manually select karke copy karein');
+  }
+}
+function showCurrentToken(){
+  if(ACCESS_TOKEN){
+    showTbStatus('info','Token already saved hai ('+ACCESS_TOKEN.length+' characters). Badalna ho to naya token paste karke Save karein.');
+  }
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  showCurrentProxy();
+  showCurrentToken();
+  updateBookmarkLink();
+});
+
+function resetSetup(){
+  if(!confirm('Saved Proxy URL aur Token dono clear ho jayenge. Pakka?')) return;
+  try{
+    localStorage.removeItem('upstox_token');
+    localStorage.removeItem('upstox_proxy');
+  }catch(e){}
+  ACCESS_TOKEN='';
+  PROXY_BASE='';
+  document.getElementById('proxyStatus').className='tb-status';
+  document.getElementById('proxyStatus').textContent='';
+  document.getElementById('tbStatus').className='tb-status';
+  document.getElementById('tbStatus').textContent='';
+  document.getElementById('proxyInput').placeholder='https://your-app.onrender.com';
+  showToast('✓ Reset ho gaya — ab dono dobara save karein');
+}
+
+/* ════════════════════════════════════════
+   FUNDAMENTAL SCORE (same logic as ORB scanner)
+════════════════════════════════════════ */
+function fScore(s){
+  let sc=0;
+  if(s.eps>0)sc+=20;
+  sc+=s.roe>=20?25:s.roe>=12?15:s.roe>0?7:0;
+  sc+=s.debt<=0.3?25:s.debt<=1?18:s.debt<=3?10:3;
+  sc+=s.pe>0&&s.pe<=20?20:s.pe<=30?15:s.pe<=50?9:4;
+  sc+=s.promo>=55?10:s.promo>=40?7:s.promo>=25?4:0;
+  return Math.min(sc,100);
+}
+
+/* ════════════════════════════════════════
+   TOMORROW'S MOVER SCORE — 6-factor system
+   1. Closing Strength (20) - kitna paas band hua day-high ke
+   2. Volume Surge (20) - aaj ka volume vs average
+   3. Price Momentum (15) - day's net change %
+   4. Proximity to 52w High (15) - breakout ke kitna paas
+   5. Fundamental Quality (15) - existing fScore se
+   6. Range Expansion (15) - aaj ki range vs typical (volatility = interest)
+════════════════════════════════════════ */
+function moverScore(s,q,fs){
+  const dayRange=q.dayHigh-q.dayLow;
+  const closingStrength = dayRange>0 ? ((q.cmp-q.dayLow)/dayRange)*100 : 50;
+
+  let score=0;
+  const breakdown={};
+
+  // 1. Closing Strength (20 pts) - close near high = bulls in control into tomorrow
+  const csScore = Math.min((closingStrength/100)*20,20);
+  score+=csScore; breakdown.closingStrength=Math.round(csScore);
+
+  // 2. Volume Surge (20 pts) - agar volume data available nahi hai (market
+  // band hone par Upstox OHLC endpoint volume nahi deta), to is factor ko
+  // 0 maan kar score kam karna unfair hai. Neutral half-score dete hain
+  // taaki yeh factor stock ko galat tarike se penalize na kare.
+  const volScore = q.volume>0 ? Math.min((q.volR/5)*20,20) : 10;
+  score+=volScore; breakdown.volume=Math.round(volScore);
+
+  // 3. Price Momentum (15 pts) - sweet spot 1-6% up, too much = exhaustion risk
+  let momScore=0;
+  if(q.chgPct>=1 && q.chgPct<=6) momScore=15;
+  else if(q.chgPct>0 && q.chgPct<1) momScore=8;
+  else if(q.chgPct>6 && q.chgPct<=9) momScore=10; // strong but slightly extended
+  else if(q.chgPct>9) momScore=5; // very extended, overnight gap-fade risk
+  score+=momScore; breakdown.momentum=momScore;
+
+  // 4. Proximity to 52w High (15 pts) - near high = breakout fuel
+  let proxScore=0;
+  if(q.w52h>0){
+    const pctFromHigh = ((q.w52h-q.cmp)/q.w52h)*100;
+    if(pctFromHigh<=2) proxScore=15;
+    else if(pctFromHigh<=5) proxScore=12;
+    else if(pctFromHigh<=10) proxScore=8;
+    else if(pctFromHigh<=20) proxScore=4;
+  }
+  score+=proxScore; breakdown.proximity=proxScore;
+
+  // 5. Fundamental Quality (15 pts) - scaled from 100-pt fScore
+  const fundScore15 = (fs/100)*15;
+  score+=fundScore15; breakdown.fundamental=Math.round(fundScore15);
+
+  // 6. Range Expansion (15 pts) - wider-than-typical range = high interest/volatility
+  const rangePct = q.prev>0 ? (dayRange/q.prev)*100 : 0;
+  let rangeScore=0;
+  if(rangePct>=2 && rangePct<=6) rangeScore=15;
+  else if(rangePct>1 && rangePct<2) rangeScore=8;
+  else if(rangePct>6) rangeScore=10;
+  score+=rangeScore; breakdown.range=rangeScore;
+
+  return {total:Math.min(Math.round(score),100), breakdown, closingStrength:Math.round(closingStrength)};
+}
+
+let results=[],autoTmr=null,aiCache={},filterOpen=false,hasScanned=false;
+
+function tick(){
+  const ist=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+  const p=n=>String(n).padStart(2,'0');
+  document.getElementById('ist').textContent=p(ist.getHours())+':'+p(ist.getMinutes())+':'+p(ist.getSeconds());
+  const wd=ist.getDay(),h=ist.getHours(),m=ist.getMinutes();
+  const isOpen=wd>0&&wd<6&&(h>9||(h===9&&m>=15))&&!(h>15||(h===15&&m>=30));
+  document.getElementById('mktDot').className='dot'+(isOpen?' live':'');
+  document.getElementById('mktLbl').textContent=isOpen?'Open':'Closed';
+}
+setInterval(tick,1000);tick();
+
+function toggleFilterPanel(){
+  filterOpen=!filterOpen;
+  document.getElementById('filterPanel').classList.toggle('open',filterOpen);
+  document.getElementById('filterToggle').classList.toggle('on',filterOpen);
+}
+
+/* ════════════════════════════════════════
+   FETCH REAL DATA FROM UPSTOX (via proxy)
+════════════════════════════════════════ */
+async function fetchFullQuotes(keys){
+  // Full market quote API — OHLC + volume + last_price sab ek saath
+  // (pehle OHLC endpoint use kiya tha jisme market-closed par volume
+  // nahi aata tha; yeh endpoint hamesha volume deta hai)
+  const encodedKeys=keys.map(k=>encodeURIComponent(k)).join(',');
+  const url=PROXY_BASE+'/api/v2/market-quote/quotes?instrument_key='+encodedKeys;
+  const resp=await fetch(url,{
+    headers:{'Accept':'application/json','Authorization':'Bearer '+ACCESS_TOKEN}
+  });
+  const rawText=await resp.text();
+  if(!resp.ok){ throw {status:resp.status, body:rawText}; }
+  let parsed;
+  try{ parsed=JSON.parse(rawText); }catch(e){ throw {status:'parse-error', body:rawText}; }
+  if(parsed.status==='error'){ throw {status:'upstox-error', body:JSON.stringify(parsed.errors||parsed)}; }
+  return parsed;
+}
+
+/* ════════════════════════════════════════
+   WAKE PROXY
+════════════════════════════════════════ */
+async function wakeProxy(){
+  const maxAttempts=14;
+  for(let i=0;i<maxAttempts;i++){
+    const elapsed=i*5;
+    prog(Math.min(2+i*2,25), 'Server jagaya ja raha hai... ('+elapsed+'s / try '+(i+1)+'/'+maxAttempts+')');
+    const attemptStart=Date.now();
+    let success=false;
+    try{
+      // /health ki jagah root URL use karte hain - yeh hamesha respond
+      // karta hai chahe server abhi jag raha ho ya pehle se jaaga ho
+      const resp=await fetch(PROXY_BASE+'/',{cache:'no-store',
+        headers:{'Authorization':'Bearer '+ACCESS_TOKEN}});
+      if(resp.ok||resp.status===401) success=true;
+    }catch(e){ success=false; }
+    if(success){
+      prog(25,'✓ Server jag gaya!');
+      await sleep(300);
+      return true;
+    }
+    const elapsedMs=Date.now()-attemptStart;
+    await sleep(Math.max(5000-elapsedMs,500));
+  }
+  return false;
+}
+
+/* ════════════════════════════════════════
+   MAIN SCAN
+════════════════════════════════════════ */
+async function runScan(){
+  if(!PROXY_BASE){
+    document.getElementById('proxyBanner').classList.remove('hidden');
+    showProxyStatus('err','Pehle Proxy Server URL save karein');
+    showToast('⚠️ Proxy Server URL chahiye');
+    return;
+  }
+  if(!ACCESS_TOKEN){
+    document.getElementById('tokenBanner').classList.remove('hidden');
+    showTbStatus('err','Pehle apna Upstox Access Token save karein');
+    showToast('⚠️ Access Token chahiye');
+    return;
+  }
+
+  filterOpen=false;
+  document.getElementById('filterPanel').classList.remove('open');
+  document.getElementById('filterToggle').classList.remove('on');
+  document.getElementById('summaryBar').classList.remove('show');
+
+  const btn=document.getElementById('scanBtn');
+  btn.disabled=true;btn.textContent='Scanning...';
+  document.getElementById('progWrap').classList.add('show');
+  document.getElementById('resultsArea').innerHTML='';
+  prog(3,'NSE instrument list load ho rahi hai...');
+
+  // Dynamic instrument list load karo (proxy se Upstox master file)
+  try{
+    STOCKS = await loadNseInstruments(prog);
+  }catch(err){
+    document.getElementById('progWrap').classList.remove('show');
+    btn.disabled=false;btn.textContent='🔥 Full NSE Scan (~2000 Stocks)';
+    showAPIError(err);
+    return;
+  }
+  prog(15,'Mila: '+STOCKS.length+' NSE stocks! Ab quotes fetch ho rahe hain...');
+  await sleep(100);
+
+  const topN=parseInt(document.getElementById('topN').value);
+  const minCS=parseFloat(document.getElementById('fcs').value);
+  const minVol=parseFloat(document.getElementById('fv').value);
+  const minDC=parseFloat(document.getElementById('fdc').value);
+
+  // Market cap filter ab meaningful nahi (dynamic list mein mc='U' hai)
+  // Fundamental filters bhi skip (data nahi) - sirf price action se filter
+  const uni=STOCKS;
+
+  let quoteMap={};
+  try{
+    // Full quotes API — 500 per batch (OHLC + volume sab ek saath)
+    const batches=[];
+    for(let i=0;i<uni.length;i+=500) batches.push(uni.slice(i,i+500));
+    let done=0;
+    for(const batch of batches){
+      const keys=batch.map(s=>s.key);
+      const data=await fetchFullQuotes(keys);
+      if(data.status==='success'){ Object.assign(quoteMap,data.data); }
+      done+=batch.length;
+      prog(15+Math.round((done/uni.length)*52),'Quotes mile: '+done+'/'+uni.length+' stocks');
+      await sleep(200);
+    }
+  }catch(err){
+    document.getElementById('progWrap').classList.remove('show');
+    btn.disabled=false;btn.textContent='🔥 Full NSE Scan (~2000 Stocks)';
+    showAPIError(err);
+    return;
+  }
+
+  // Alias for backward compat (scoring loop uses ohlcMap)
+  const ohlcMap = quoteMap;
+
+  prog(72,'Mover Score calculate ho raha hai (6 factors)...');
+  await sleep(200);
+
+  const candidates=[];
+  const debugCounts={noQuote:0,noLiveOhlc:0,noCmpPrev:0,failDC:0,failVol:0,failCS:0,passed:0};
+  for(const s of uni){
+    // Upstox OHLC response keys symbol-based hote hain (e.g. "NSE_EQ:LT"),
+    // ISIN-based nahi (jaisa humne socha tha "NSE_EQ|INE...") - isliye match
+    // ab stock symbol (s.s) se response key ke trading-symbol part se karte hain.
+    const ohlcKeyMatch=Object.keys(ohlcMap).find(k=>{
+      const symPart=k.split(':')[1]||k.split('|')[1]||k;
+      return symPart===s.s || symPart===s.s.replace('&','%26') || k.endsWith(':'+s.s);
+    });
+    const q=ohlcKeyMatch?ohlcMap[ohlcKeyMatch]:null;
+    if(!q){ debugCounts.noQuote++; continue; }
+    // Market band hone par Upstox response shape badal sakta hai - kabhi
+    // "live_ohlc" object milta hai, kabhi seedha "ohlc" object, kabhi sirf
+    // root-level fields. Hum teeno tareeke try karte hain taaki market
+    // open/closed dono states mein scanner kaam kare.
+    const live = q.live_ohlc || q.ohlc || q;
+    if(!live){ debugCounts.noLiveOhlc++; continue; }
+    // Market band hone par "live" last_price kabhi 0/missing aa sakta hai
+    // (kyunki yeh live-feed field hai). Us case mein din ke close price ko
+    // hi current price maan lete hain - yeh hi din ka final/settled price
+    // hai, isliye shaam/raat ko scan karne par bhi sahi result milta hai.
+    const cmp = q.last_price || live.close || live.ltp || live.open;
+    // IMPORTANT: agar prev_close root level pe na mile, to "live.close" ko
+    // prev maan lena GALAT hai (kyunki cmp bhi live.close se aata hai -
+    // isse prev===cmp ho jaata hai aur day-change hamesha 0% dikhta hai,
+    // jisse koi stock filter pass nahi karta). Sahi fallback: din ka OPEN
+    // price use karo as proxy for previous close (ye intraday-change ke
+    // bahut kareeb hota hai aur kabhi cmp ke barabar nahi hoga jab tak
+    // stock flat na ho).
+    const prev = q.prev_close || (live.open !== cmp ? live.open : null);
+    if(!cmp||!prev){ debugCounts.noCmpPrev++; continue; }
+
+    const chgPct=+((cmp-prev)/prev*100).toFixed(2);
+    // PEHLE YEH BUG THA: volR = volume/(price*1000) hamesha <1 aata tha
+    // kyunki yeh asal mein koi "average volume" se compare nahi kar raha
+    // tha - bina historical average data ke (jo is OHLC endpoint mein
+    // available hi nahi hai) "volume surge" sahi se nikalna possible nahi
+    // hai. Iski jagah hum seedha turnover (volume x price = total rupee
+    // value traded) dikhate hain, jo khud ek meaningful absolute metric
+    // hai (high turnover = high interest), bina kisi galat ratio ke.
+    // BUG FIX: jab "live" variable q.ohlc se aata hai (market band hone
+    // wale response shape mein), to "volume" field us "ohlc" object ke
+    // andar NAHI hota - woh root-level "q.volume" mein hota hai. Pehle
+    // sirf live.volume dekha jaata tha jo hamesha undefined/0 aata tha,
+    // isliye Turnover hamesha ₹0Cr dikhta tha. Ab dono jagah check karte hain.
+    const rawVolume = q.volume || live.volume || 0;
+    const turnoverCr = rawVolume>0 ? +((rawVolume*cmp)/10000000).toFixed(2) : 0; // in Crores
+    // Convert turnover into a comparable 0-10 "interest score" using log
+    // scale - 1 Cr turnover≈1, 10 Cr≈3, 100 Cr≈6, 1000 Cr≈10 (caps at 10)
+    const volR = turnoverCr>0 ? Math.min(+(Math.log10(turnoverCr+1)*3).toFixed(2),10) : 0;
+
+    const dayHigh = live.high || cmp;
+    const dayLow = live.low || cmp;
+
+    const qObj={cmp,prev,dayHigh,dayLow,chgPct,volR,turnoverCr,volume:rawVolume,
+      w52h: dayHigh, w52l: dayLow}; // 52w not in OHLC endpoint; using day range as proxy fallback
+
+    if(chgPct<minDC){ debugCounts.failDC++; continue; }
+    // Market band hone par Upstox OHLC endpoint "volume" field deta hi
+    // nahi (na root level pe, na ohlc ke andar) - is wajah se turnoverCr
+    // hamesha 0 aata tha aur Volume filter sab kuch reject kar deta tha.
+    // Fix: agar volume data hi available nahi hai (rawVolume===0), to is
+    // filter ko skip karte hain (na ki fail maan lete hain) - baaki 5
+    // factors (closing strength, momentum, proximity, fundamentals, range)
+    // se hi score banta hai jab volume data missing ho.
+    if(rawVolume>0 && qObj.volR<minVol){ debugCounts.failVol++; continue; }
+
+    const fs=fScore(s);
+    const mv=moverScore(s,qObj,fs);
+    if(mv.closingStrength<minCS){ debugCounts.failCS++; continue; }
+
+    debugCounts.passed++;
+    candidates.push({s,q:qObj,fs,mv});
+  }
+  console.log('DEBUG counts:', debugCounts, 'ohlcMap keys:', Object.keys(ohlcMap).length, 'sample:', Object.values(ohlcMap)[0]);
+  window.__lastDebug = {debugCounts, ohlcMapSample: Object.entries(ohlcMap).slice(0,2)};
+
+  candidates.sort((a,b)=>b.mv.total-a.mv.total);
+  results=candidates.slice(0,topN);
+
+  if(results.length===0){
+    document.getElementById('progWrap').classList.remove('show');
+    btn.disabled=false;btn.textContent='🔥 Full NSE Scan (~2000 Stocks)';
+    hasScanned=true;
+    const dc=debugCounts;
+    document.getElementById('resultsArea').innerHTML='<div class="err-box"><b>🔍 Debug: 0 Results Mile</b><br><br>'+
+      'Total stocks scan kiye: <code>'+uni.length+'</code><br>'+
+      'Upstox se quote mila: <code>'+Object.keys(ohlcMap).length+'</code><br>'+
+      'Sample ohlcMap keys: <code>'+Object.keys(ohlcMap).slice(0,3).join(' | ')+'</code><br>'+
+      'Raw sample object (full structure): <code>'+JSON.stringify(Object.values(ohlcMap)[0]).slice(0,500)+'</code><br>'+
+      'Humara bheja hua sample key: <code>'+(uni[0]?uni[0].key:'none')+'</code><br><br>'+
+      '<b>Reject hone ki wajah:</b><br>'+
+      '• Quote hi nahi mila: <code>'+dc.noQuote+'</code><br>'+
+      '• live_ohlc field missing: <code>'+dc.noLiveOhlc+'</code><br>'+
+      '• Price/Prev-close missing: <code>'+dc.noCmpPrev+'</code><br>'+
+      '• Day Change filter fail: <code>'+dc.failDC+'</code><br>'+
+      '• Volume filter fail: <code>'+dc.failVol+'</code><br>'+
+      '• Closing Strength filter fail: <code>'+dc.failCS+'</code><br>'+
+      '• Pass hue: <code>'+dc.passed+'</code>'+
+      '</div>';
+    showToast('Koi strong mover candidate nahi mila — filters relax karein');
+    return;
+  }
+
+  prog(88,'Top '+results.length+' stocks ke liye AI analysis...');
+  try{await doAI(results);}catch(e){}
+
+  prog(100,'Done ✓');
+  await sleep(200);
+  document.getElementById('progWrap').classList.remove('show');
+
+  render();
+  hasScanned=true;
+
+  document.getElementById('summaryBar').classList.add('show');
+  const isMktOpen=document.getElementById('mktLbl').textContent==='Open';
+  const dataNote=isMktOpen?' (live data)':' (aaj ke closing data se)';
+  document.getElementById('summaryText').innerHTML='<b>'+results.length+'</b> top mover candidates mile · '+uni.length+' scan kiye'+dataNote;
+
+  btn.disabled=false;btn.textContent='🔥 Re-Scan';
+  showToast('✓ '+results.length+' kal ke best mover candidates mile');
+}
+
+function showAPIError(err){
+  const area=document.getElementById('resultsArea');
+  let msg='';
+  let title='⚠️ Error';
+  if(err.status===401){
+    title='🔑 Token Invalid ya Expired';
+    msg='Naya token generate karke "Step 2" mein dobara save karein.';
+  }else if(err.status==='upstox-error'){
+    title='⚠️ Upstox Ne Error Diya';
+    msg='<code>'+(err.body||'').slice(0,400)+'</code>';
+  }else if(err.message==='Failed to fetch' || err instanceof TypeError){
+    title='🌐 Proxy Server Tak Pahunch Nahi Paaye';
+    msg='Naye tab mein <code>'+(PROXY_BASE||'')+'/health</code> check karein, phir dobara try karein.';
+  }else{
+    msg='Status: <code>'+err.status+'</code><br>Response: <code>'+(err.body||err.message||'unknown').toString().slice(0,400)+'</code>';
+  }
+  area.innerHTML='<div class="err-box"><b>'+title+'</b><br><br>'+msg+'</div>';
+  showToast('❌ Scan fail hua');
+}
+
+/* ════════════════════════════════════════
+   AI ANALYSIS
+════════════════════════════════════════ */
+async function doAI(cands){
+  const list=cands.map(c=>c.s.s+' ('+c.s.n+', '+c.s.sec+', '+c.s.mc+'-Cap): CMP=₹'+c.q.cmp+', DayChg=+'+c.q.chgPct+'%, ClosingStrength='+c.mv.closingStrength+'%, VolRatio='+c.q.volR+'×, MoverScore='+c.mv.total+'/100, ROE='+c.s.roe+'%, FundScore='+c.fs+'/100').join('\n');
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,messages:[{role:'user',content:'You are a senior NSE technical analyst specializing in predicting next-day breakout/momentum stocks based on todays closing price action, volume, and fundamentals. These stocks scored highest on a 6-factor "tomorrow mover" model (closing strength near day-high, volume surge, momentum, proximity to highs, fundamentals, range expansion):\n\n'+list+'\n\nFor each give a SHORT one-line reason (under 15 words) plus full analysis focused on WHY this could move tomorrow. Return ONLY JSON:\n{"stocks":[{"sym":"SYMBOL","oneliner":"short punchy reason in Hindi/English mix under 15 words","bullish":"detailed reason why this could be a strong mover tomorrow - mention specific price action, sector context, catalysts","target":"plausible next resistance/target zone","sl":"where invalidation level is - if price falls below this, thesis is wrong","risk":"specific risk - e.g. gap-down risk, profit booking, overall market risk"}]}'}]})});
+  const data=await resp.json();
+  const txt=(data.content||[]).find(b=>b.type==='text')?.text||'{}';
+  try{const j=JSON.parse(txt.replace(/```json|```/g,'').trim());(j.stocks||[]).forEach(i=>{aiCache[i.sym]=i});}catch(e){}
+  render();
+}
+
+/* ════════════════════════════════════════
+   RENDER
+════════════════════════════════════════ */
+function render(){
+  const area=document.getElementById('resultsArea');
+  if(!results.length){
+    if(hasScanned){
+      area.innerHTML='<div class="empty"><div class="empty-ico">🔍</div><div class="empty-h">Koi strong candidate nahi mila</div><div class="empty-p">Filters relax karein — Closing Strength ya Volume Ratio kam karein.</div></div>';
+    }
+    return;
+  }
+
+  let html='';
+  results.forEach((r,idx)=>{
+    const {s,q,fs,mv}=r;
+    const isUp=q.chgPct>=0;
+    const cc=mv.total>=75?'#10b981':mv.total>=55?'#f59e0b':'#0ea5e9';
+    const mcapClass='mcap-'+s.mc;
+    const ai=aiCache[s.s];
+    const rankClass=idx===0?' rank1':'';
+    const badge=idx===0?'<div class="rank-badge">🔥 #1 TOP PICK</div>':'';
+
+    html+=`<div class="srow${rankClass}" onclick="showDrawer('${s.s}')">
+      ${badge}
+      <div class="srow-top">
+        <div class="srow-left">
+          <div class="srow-id">
+            <span class="s-rank">#${idx+1}</span>
+            <span class="s-sym">${s.s}</span>
+            <span class="mcap-tag ${mcapClass}">${s.mc}</span>
+            <span class="live-tag">LIVE</span>
+          </div>
+          <div class="s-name">${s.n}</div>
+          <div class="s-sector">${s.sec}</div>
+        </div>
+        <div class="srow-price">
+          <div class="s-price">₹${q.cmp.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div class="${isUp?'s-chg-up':'s-chg-dn'}">${isUp?'+':''}${q.chgPct.toFixed(2)}%</div>
+        </div>
+      </div>
+      <div class="factor-grid">
+        <div class="factor-chip"><div class="fc-lbl">Closing Strength</div><div class="fc-val" style="color:#10b981">${mv.closingStrength}%</div></div>
+        <div class="factor-chip"><div class="fc-lbl">Turnover</div><div class="fc-val" style="color:#0ea5e9">₹${q.turnoverCr}Cr</div></div>
+        <div class="factor-chip"><div class="fc-lbl">Fund Score</div><div class="fc-val" style="color:#c8dff0">${fs}/100</div></div>
+      </div>
+      ${ai?`<div class="reason-preview">💡 ${ai.oneliner}</div>`:''}
+      <div class="srow-bottom">
+        <div class="conf-display">
+          <span style="font-size:10px;color:#4a6a82">MOVER SCORE</span>
+          <div class="conf-bar-bg"><div class="conf-bar-fill" style="width:${mv.total}%;background:${cc}"></div></div>
+        </div>
+        <span class="conf-num" style="color:${cc}">${mv.total}%</span>
+      </div>
+    </div>`;
+  });
+  area.innerHTML=html;
+}
+
+async function showDrawer(sym){
+  const r=results.find(r=>r.s.s===sym);
+  if(!r)return;
+  const {s,q,fs,mv}=r;
+  const ai=aiCache[sym];
+  const isUp=q.chgPct>=0;
+  const cc=mv.total>=75?'#10b981':mv.total>=55?'#f59e0b':'#0ea5e9';
+
+  document.getElementById('dSym').textContent=sym;
+  document.getElementById('dSub').textContent=s.n+' · '+s.sec+' · '+(s.mc==='L'?'Large':s.mc==='M'?'Mid':'Small')+' Cap · LIVE';
+
+  const peColor=s.pe<=25?'#10b981':s.pe<=45?'#f59e0b':'#ef4444';
+  const roeColor=s.roe>=20?'#10b981':s.roe>=12?'#f59e0b':'#ef4444';
+  const debtColor=s.debt<=0.5?'#10b981':s.debt<=2?'#f59e0b':'#ef4444';
+  const promoColor=s.promo>=50?'#10b981':s.promo>=30?'#f59e0b':'#ef4444';
+
+  const bd=mv.breakdown;
+
+  document.getElementById('drBody').innerHTML=`
+    <div>
+      <div class="dr-price">₹${q.cmp.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="${isUp?'dr-chg-up':'dr-chg-dn'}">${isUp?'+':''}${q.chgPct.toFixed(2)}% &nbsp;·&nbsp; ${isUp?'+':''}₹${Math.abs(q.cmp-q.prev).toFixed(2)} aaj</div>
+    </div>
+
+    <div>
+      <div class="sec-title">Mover Score Breakdown (${mv.total}/100)</div>
+      <div class="score-breakdown">
+        <div class="sb-row"><span class="sb-label">Closing Strength</span><div class="sb-bar-bg"><div class="sb-bar-fill" style="width:${(bd.closingStrength/20)*100}%"></div></div><span class="sb-num">${bd.closingStrength}/20</span></div>
+        <div class="sb-row"><span class="sb-label">Volume Surge</span><div class="sb-bar-bg"><div class="sb-bar-fill" style="width:${(bd.volume/20)*100}%"></div></div><span class="sb-num">${bd.volume}/20</span></div>
+        <div class="sb-row"><span class="sb-label">Momentum</span><div class="sb-bar-bg"><div class="sb-bar-fill" style="width:${(bd.momentum/15)*100}%"></div></div><span class="sb-num">${bd.momentum}/15</span></div>
+        <div class="sb-row"><span class="sb-label">52W Proximity</span><div class="sb-bar-bg"><div class="sb-bar-fill" style="width:${(bd.proximity/15)*100}%"></div></div><span class="sb-num">${bd.proximity}/15</span></div>
+        <div class="sb-row"><span class="sb-label">Fundamentals</span><div class="sb-bar-bg"><div class="sb-bar-fill" style="width:${(bd.fundamental/15)*100}%"></div></div><span class="sb-num">${bd.fundamental}/15</span></div>
+        <div class="sb-row"><span class="sb-label">Range Expansion</span><div class="sb-bar-bg"><div class="sb-bar-fill" style="width:${(bd.range/15)*100}%"></div></div><span class="sb-num">${bd.range}/15</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">Aaj Ka Price Action</div>
+      <div class="kv2">
+        <div class="kv"><div class="kk">Day High</div><div class="kval">₹${q.dayHigh.toLocaleString('en-IN')}</div></div>
+        <div class="kv"><div class="kk">Day Low</div><div class="kval">₹${q.dayLow.toLocaleString('en-IN')}</div></div>
+        <div class="kv"><div class="kk">Closing Strength</div><div class="kval" style="color:#10b981">${mv.closingStrength}% of range</div></div>
+        <div class="kv"><div class="kk">Turnover</div><div class="kval" style="color:${q.volR>=3?'#10b981':'#f59e0b'}">₹${q.turnoverCr} Cr</div></div>
+        <div class="kv"><div class="kk">Prev Close</div><div class="kval">₹${q.prev.toLocaleString('en-IN')}</div></div>
+        <div class="kv"><div class="kk">Mover Score</div><div class="kval" style="color:${cc}">${mv.total}/100</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">AI Analysis — Kal Kyun Chal Sakta Hai</div>
+      <div class="ai-card" id="aiBox">
+        ${ai?`<div style="margin-bottom:8px"><b>📈 Kal chalne ka reason:</b><br><span style="color:#c8dff0">${ai.bullish}</span></div>
+        <div style="margin-bottom:8px"><b style="color:#0ea5e9">🎯 Target Zone:</b> <span style="color:#c8dff0">${ai.target}</span></div>
+        <div style="margin-bottom:8px"><b style="color:#f59e0b">🛡️ Invalidation Level:</b> <span style="color:#c8dff0">${ai.sl}</span></div>
+        <div><b style="color:#ef4444">⚠️ Risk:</b> <span style="color:#c8dff0">${ai.risk}</span></div>`
+        :`<div style="color:#4a6a82">AI analysis available nahi hai</div>`}
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-title">Fundamental Quality (${fs}/100)</div>
+      <div class="kv2">
+        <div class="kv"><div class="kk">P/E Ratio</div><div class="kval" style="color:${peColor}">${s.pe}×</div></div>
+        <div class="kv"><div class="kk">ROE</div><div class="kval" style="color:${roeColor}">${s.roe}%</div></div>
+        <div class="kv"><div class="kk">Debt/Equity</div><div class="kval" style="color:${debtColor}">${s.debt}</div></div>
+        <div class="kv"><div class="kk">EPS (TTM)</div><div class="kval">₹${s.eps}</div></div>
+        <div class="kv"><div class="kk">Promoter Holding</div><div class="kval" style="color:${promoColor}">${s.promo}%</div></div>
+        <div class="kv"><div class="kk">Market Cap</div><div class="kval">${s.mc==='L'?'Large':s.mc==='M'?'Mid':'Small'} Cap</div></div>
+      </div>
+    </div>
+
+    <div class="disc">⚠️ <b>Disclaimer:</b> Yeh model aaj ke closing data par based prediction hai — guarantee nahi hai. Market open hone par overnight news, global cues, aur gap-up/gap-down se result badal sakta hai. SEBI-registered advice nahi hai, apna risk management khud karein.</div>
+  `;
+
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeDrawer(e){if(e.target===document.getElementById('overlay'))closeDrawerDirect()}
+function closeDrawerDirect(){document.getElementById('overlay').classList.remove('open')}
+
+function prog(p,t){
+  document.getElementById('progFill').style.width=p+'%';
+  document.getElementById('progTxt').textContent=t;
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('on');
+  setTimeout(()=>t.classList.remove('on'),4000);
+}
+</script>
+</body>
+</html>
