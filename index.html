@@ -1,182 +1,162 @@
-<!DOCTYPE html><html>
+<!DOCTYPE html>
+<html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>ORB Scanner Pro</title><style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
+<title>Ultimate NSE Scanner</title>
+
+<style>
 body{
-font-family:Arial;
-margin:10px;
-background:#111;
-color:white;
+    font-family:Arial;
+    background:#111;
+    color:white;
+    margin:0;
+    padding:15px;
 }
 
-input{
-width:100%;
-padding:12px;
-font-size:16px;
-margin-bottom:10px;
-border-radius:8px;
-border:none;
+h1{
+    text-align:center;
 }
 
 button{
-width:100%;
-padding:14px;
-font-size:16px;
-margin-bottom:10px;
-border:none;
-border-radius:8px;
-cursor:pointer;
+    width:100%;
+    padding:12px;
+    margin:5px 0;
+    border:none;
+    border-radius:8px;
+    font-size:16px;
 }
 
-.card{
-background:#1c1c1c;
-padding:10px;
-margin-top:10px;
-border-radius:8px;
-}
-
-.green{
-color:#00ff7f;
-}
-
-.red{
-color:#ff4d4d;
+.scan{
+    background:#00b894;
+    color:white;
 }
 
 table{
-width:100%;
-border-collapse:collapse;
-font-size:14px;
+    width:100%;
+    border-collapse:collapse;
+    margin-top:15px;
 }
 
-td,th{
-padding:8px;
-border:1px solid #333;
+th,td{
+    border:1px solid #444;
+    padding:8px;
+    text-align:center;
 }
 
-</style></head><body><h2>ORB Scanner Pro</h2><input
-id="token"
-placeholder="Paste Upstox Access Token"
-/>
+th{
+    background:#222;
+}
+</style>
+</head>
 
-<button onclick="loadStocks()">
+<body>
+
+<h1>Ultimate NSE Scanner</h1>
+
+<button class="scan" onclick="loadStocks()">
 Load NSE Stocks
-</button><button onclick="scanQuotes()">
-Run Live Scan
-</button><div id="status"></div><div class="card"><table id="resultTable"><thead>
+</button>
+
+<button class="scan" onclick="runScan('ORB')">
+ORB Scan
+</button>
+
+<button class="scan" onclick="runScan('Volume')">
+Volume Build Up
+</button>
+
+<button class="scan" onclick="runScan('Bottom')">
+Bottom Fishing
+</button>
+
+<button class="scan" onclick="runScan('Momentum')">
+Momentum
+</button>
+
+<button class="scan" onclick="runScan('Stage2')">
+Stage 2
+</button>
+
+<button class="scan" onclick="runScan('RS')">
+Relative Strength
+</button>
+
+<button class="scan" onclick="runScan('Super')">
+Super Momentum
+</button>
+
+<div id="status"></div>
+
+<table>
+<thead>
 <tr>
 <th>Symbol</th>
-<th>Price</th>
-<th>Volume</th>
+<th>Name</th>
 </tr>
-</thead><tbody>
-</tbody></table></div><script>
+</thead>
 
-const BASE =
+<tbody id="results">
+</tbody>
+</table>
+
+<script>
+
+const PROXY =
 "https://upstox-orb-proxy.onrender.com";
 
-let stockList=[];
+let stocks=[];
 
 async function loadStocks(){
 
 document.getElementById("status").innerHTML=
-"Loading stocks...";
+"Loading...";
 
-let r=
-await fetch(
-BASE+"/instruments/nse"
-);
+const r =
+await fetch(PROXY+"/instruments/nse");
 
-let data=
+const data =
 await r.json();
 
-stockList=data.data.slice(0,100);
+stocks=data.data || [];
 
 document.getElementById("status").innerHTML=
-"Loaded "+
-stockList.length+
-" Stocks";
+stocks.length + " Stocks Loaded";
+
+showStocks(stocks.slice(0,100));
 
 }
 
-async function scanQuotes(){
+function showStocks(arr){
 
-let token=
-document.getElementById("token").value.trim();
+let html="";
 
-if(!token){
+arr.forEach(s=>{
 
-alert("Enter Access Token");
-
-return;
-
-}
-
-let instruments=
-stockList.map(
-x=>x.instrument_key
-);
-
-let r=
-await fetch(
-BASE+"/scanner/quotes",
-{
-method:"POST",
-
-headers:{
-"Content-Type":"application/json",
-"Authorization":
-"Bearer "+token
-},
-
-body:JSON.stringify({
-instruments:instruments
-})
-
-}
-);
-
-let data=
-await r.json();
-
-showResults(data);
-
-}
-
-function showResults(data){
-
-let tbody=
-document.querySelector(
-"#resultTable tbody"
-);
-
-tbody.innerHTML="";
-
-if(!data.data){
-
-return;
-
-}
-
-for(let key in data.data){
-
-let s=data.data[key];
-
-let row=
-`
+html += `
 <tr>
-<td>${s.symbol || key}</td>
-<td>${s.last_price || 0}</td>
-<td>${s.volume || 0}</td>
+<td>${s.symbol}</td>
+<td>${s.name}</td>
 </tr>
 `;
 
-tbody.innerHTML+=row;
+});
+
+document.getElementById("results").innerHTML=html;
 
 }
 
+function runScan(type){
+
+alert(
+type +
+" Scanner logic next step me add karenge"
+);
+
 }
 
-</script></body>
-</html>
+</script>
+
+</body>
+  </html>
