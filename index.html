@@ -1,0 +1,182 @@
+<!DOCTYPE html><html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>ORB Scanner Pro</title><style>
+
+body{
+font-family:Arial;
+margin:10px;
+background:#111;
+color:white;
+}
+
+input{
+width:100%;
+padding:12px;
+font-size:16px;
+margin-bottom:10px;
+border-radius:8px;
+border:none;
+}
+
+button{
+width:100%;
+padding:14px;
+font-size:16px;
+margin-bottom:10px;
+border:none;
+border-radius:8px;
+cursor:pointer;
+}
+
+.card{
+background:#1c1c1c;
+padding:10px;
+margin-top:10px;
+border-radius:8px;
+}
+
+.green{
+color:#00ff7f;
+}
+
+.red{
+color:#ff4d4d;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+font-size:14px;
+}
+
+td,th{
+padding:8px;
+border:1px solid #333;
+}
+
+</style></head><body><h2>ORB Scanner Pro</h2><input
+id="token"
+placeholder="Paste Upstox Access Token"
+/>
+
+<button onclick="loadStocks()">
+Load NSE Stocks
+</button><button onclick="scanQuotes()">
+Run Live Scan
+</button><div id="status"></div><div class="card"><table id="resultTable"><thead>
+<tr>
+<th>Symbol</th>
+<th>Price</th>
+<th>Volume</th>
+</tr>
+</thead><tbody>
+</tbody></table></div><script>
+
+const BASE =
+"https://upstox-orb-proxy.onrender.com";
+
+let stockList=[];
+
+async function loadStocks(){
+
+document.getElementById("status").innerHTML=
+"Loading stocks...";
+
+let r=
+await fetch(
+BASE+"/instruments/nse"
+);
+
+let data=
+await r.json();
+
+stockList=data.data.slice(0,100);
+
+document.getElementById("status").innerHTML=
+"Loaded "+
+stockList.length+
+" Stocks";
+
+}
+
+async function scanQuotes(){
+
+let token=
+document.getElementById("token").value.trim();
+
+if(!token){
+
+alert("Enter Access Token");
+
+return;
+
+}
+
+let instruments=
+stockList.map(
+x=>x.instrument_key
+);
+
+let r=
+await fetch(
+BASE+"/scanner/quotes",
+{
+method:"POST",
+
+headers:{
+"Content-Type":"application/json",
+"Authorization":
+"Bearer "+token
+},
+
+body:JSON.stringify({
+instruments:instruments
+})
+
+}
+);
+
+let data=
+await r.json();
+
+showResults(data);
+
+}
+
+function showResults(data){
+
+let tbody=
+document.querySelector(
+"#resultTable tbody"
+);
+
+tbody.innerHTML="";
+
+if(!data.data){
+
+return;
+
+}
+
+for(let key in data.data){
+
+let s=data.data[key];
+
+let row=
+`
+<tr>
+<td>${s.symbol || key}</td>
+<td>${s.last_price || 0}</td>
+<td>${s.volume || 0}</td>
+</tr>
+`;
+
+tbody.innerHTML+=row;
+
+}
+
+}
+
+</script></body>
+</html>
