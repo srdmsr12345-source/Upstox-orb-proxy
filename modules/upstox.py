@@ -117,3 +117,75 @@ class UpstoxAPI:
         )
 
         return self.get(path)
+    def get_instruments(self):
+
+        global instrument_cache
+
+        now = time.time()
+
+        if (
+            instrument_cache["data"]
+            and
+            now - instrument_cache["updated"] < CACHE_TTL
+        ):
+            return instrument_cache["data"]
+
+        response = requests.get(
+            INSTRUMENTS_URL,
+            timeout=60
+        )
+
+        response.raise_for_status()
+
+        raw = gzip.decompress(response.content)
+
+        data = json.loads(raw)
+
+        instruments = []
+
+        for item in data:
+
+            if item.get("segment") != "NSE_EQ":
+                continue
+
+            symbol = (
+                item.get("trading_symbol")
+                or
+                item.get("tradingsymbol")
+                or
+                ""
+            )
+
+            if "|" in symbol:
+                continue
+
+            instruments.append({
+
+                "symbol":
+                    symbol,
+
+                "name":
+                    item.get("name", ""),
+
+                "isin":
+                    item.get("isin", ""),
+
+                "instrument_key":
+                    item.get(
+                        "instrument_key",
+                        ""
+                    ),
+
+                "lot_size":
+                    item.get(
+                        "lot_size",
+                        1
+                    )
+
+            })
+
+        instrument_cache["updated"] = now
+
+        instrument_cache["data"] = instruments
+
+        return instruments
