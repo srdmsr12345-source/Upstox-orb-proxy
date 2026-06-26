@@ -56,3 +56,64 @@ class UpstoxAPI:
         )
 
         return r
+    def get_ltp(self, instrument_key):
+
+        return self.get(
+            "v2/market-quote/ltp",
+            {
+                "instrument_key": instrument_key
+            }
+        )
+
+    def get_ohlc(self, instrument_key):
+
+        return self.get(
+            "v2/market-quote/ohlc",
+            {
+                "instrument_key": instrument_key
+            }
+        )
+
+    def get_quotes(self, instrument_keys):
+
+        if isinstance(instrument_keys, list):
+            instrument_keys = ",".join(instrument_keys)
+
+        return self.get(
+            "v2/market-quote/quotes",
+            {
+                "instrument_key": instrument_keys
+            }
+        )
+
+    def get_historical(
+        self,
+        instrument_key,
+        interval,
+        to_date,
+        from_date
+    ):
+
+        path = (
+            f"v2/historical-candle/"
+            f"{instrument_key}/"
+            f"{interval}/"
+            f"{to_date}/"
+            f"{from_date}"
+        )
+
+        return self.get(path)
+
+    def get_intraday(
+        self,
+        instrument_key,
+        interval
+    ):
+
+        path = (
+            f"v2/historical-candle/intraday/"
+            f"{instrument_key}/"
+            f"{interval}"
+        )
+
+        return self.get(path)
