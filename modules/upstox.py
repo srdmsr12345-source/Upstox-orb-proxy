@@ -189,3 +189,68 @@ class UpstoxAPI:
         instrument_cache["data"] = instruments
 
         return instruments
+    def request_json(self, response):
+
+        try:
+
+            response.raise_for_status()
+
+            return response.json()
+
+        except requests.exceptions.HTTPError as e:
+
+            return {
+                "status": "error",
+                "type": "http_error",
+                "message": str(e),
+                "code": response.status_code
+            }
+
+        except ValueError:
+
+            return {
+                "status": "error",
+                "type": "invalid_json",
+                "message": "Invalid JSON received"
+            }
+
+        except Exception as e:
+
+            return {
+                "status": "error",
+                "type": "unknown",
+                "message": str(e)
+            }
+
+
+    def safe_get(self, path, params=None, retries=3):
+
+        for attempt in range(retries):
+
+            try:
+
+                response = self.get(path, params)
+
+                return self.request_json(response)
+
+            except requests.exceptions.Timeout:
+
+                if attempt == retries - 1:
+
+                    return {
+                        "status": "error",
+                        "message": "Request Timeout"
+                    }
+
+                time.sleep(2)
+
+            except Exception as e:
+
+                if attempt == retries - 1:
+
+                    return {
+                        "status": "error",
+                        "message": str(e)
+                    }
+
+                time.sleep(2)
