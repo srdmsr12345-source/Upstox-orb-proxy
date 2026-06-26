@@ -26,6 +26,7 @@ button{
     border:none;
     border-radius:8px;
     font-size:16px;
+    cursor:pointer;
 }
 
 .scan{
@@ -47,6 +48,15 @@ th,td{
 
 th{
     background:#222;
+}
+
+pre{
+    white-space:pre-wrap;
+    word-break:break-word;
+    background:#222;
+    padding:10px;
+    border-radius:8px;
+    overflow:auto;
 }
 </style>
 </head>
@@ -87,18 +97,30 @@ Relative Strength
 Super Momentum
 </button>
 
+<button class="scan" onclick="testHistory()">
+Test History API
+</button>
+
 <div id="status"></div>
 
 <table>
+
 <thead>
+
 <tr>
+
 <th>Symbol</th>
+
 <th>Name</th>
+
 </tr>
+
 </thead>
 
 <tbody id="results">
+
 </tbody>
+
 </table>
 
 <script>
@@ -110,19 +132,16 @@ let stocks=[];
 
 async function loadStocks(){
 
-document.getElementById("status").innerHTML=
-"Loading...";
+document.getElementById("status").innerHTML="Loading...";
 
-const r =
-await fetch(PROXY+"/instruments/nse");
+const r=await fetch(PROXY+"/instruments/nse");
 
-const data =
-await r.json();
+const data=await r.json();
 
-stocks=data.data || [];
+stocks=data.data||[];
 
 document.getElementById("status").innerHTML=
-stocks.length + " Stocks Loaded";
+stocks.length+" Stocks Loaded";
 
 showStocks(stocks.slice(0,100));
 
@@ -134,7 +153,7 @@ let html="";
 
 arr.forEach(s=>{
 
-html += `
+html+=`
 <tr>
 <td>${s.symbol}</td>
 <td>${s.name}</td>
@@ -149,14 +168,47 @@ document.getElementById("results").innerHTML=html;
 
 function runScan(type){
 
-alert(
-type +
-" Scanner logic next step me add karenge"
-);
+alert(type+" Scanner logic next step me add karenge");
+
+}
+
+async function testHistory(){
+
+const token=prompt("Enter Upstox Access Token");
+
+if(!token){
+return;
+}
+
+const url=
+PROXY+
+"/api/v2/historical-candle/NSE_EQ|INE002A01018/day/2026-06-26/2026-01-01";
+
+try{
+
+const r=await fetch(url,{
+headers:{
+Authorization:"Bearer "+token
+}
+});
+
+const data=await r.json();
+
+console.log(data);
+
+document.getElementById("status").innerHTML=
+"<pre>"+JSON.stringify(data,null,2)+"</pre>";
+
+}catch(e){
+
+document.getElementById("status").innerHTML=
+e.toString();
+
+}
 
 }
 
 </script>
 
 </body>
-  </html>
+    </html>
