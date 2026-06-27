@@ -9,137 +9,82 @@ from modules.ai import ai_ranker
 
 from config import ACCESS_TOKEN
 
-
 app = Flask(__name__)
 
-
-upstox = UpstoxAPI(
-    ACCESS_TOKEN
-)
+upstox = UpstoxAPI(ACCESS_TOKEN)
 
 
 @app.route("/")
 def home():
-
-    return render_template(
-        "index.html"
-    )
+    return render_template("index.html")
 
 
 @app.route("/scan", methods=["POST"])
 def scan():
 
-    scan_type = request.form.get(
-        "scan_type",
-        "bottom"
-    )
-
-    date = request.form.get(
-        "date"
-    )
+    scan_type = request.form.get("scan_type", "bottom")
+    date = request.form.get("date")
 
     merged = nse.merge_bhav_delivery()
 
-    result = scanner.run(
+    result = scanner.run(scan_type, merged)
 
-        scan_type,
+    result = ai_ranker.top(result)
 
-        merged
-
-    )
-
-    result = ai_ranker.top(
-        result
-    )
-
-    summary = ai_ranker.summary(
-        result
-    )
+    summary = ai_ranker.summary(result)
 
     return {
-
         "summary": summary,
-
-        "data": result.to_dict(
-            orient="records"
-        )
-
+        "data": result.to_dict(orient="records")
     }
 
 
-if __name__ == "__main__":
-
-    app.run(
-
-        host="0.0.0.0",
-
-        port=5000,
-
-        debug=True
-
-    )
-    @app.route("/health")
+@app.route("/health")
 def health():
-
     return {
-
         "status": "ok",
-
         "service": "scanner"
-
     }
 
 
 @app.route("/symbols")
 def symbols():
-
     data = upstox.get_instruments()
 
     return {
-
         "count": len(data),
-
         "data": data
-
     }
 
 
 @app.route("/ltp/<symbol>")
 def ltp(symbol):
-
     return upstox.ltp_by_symbol(symbol)
 
 
 @app.route("/ohlc/<symbol>")
 def ohlc(symbol):
-
     return upstox.ohlc_by_symbol(symbol)
 
 
 @app.route("/history/<symbol>")
 def history(symbol):
 
-    interval = request.args.get(
-        "interval",
-        "day"
-    )
-
-    from_date = request.args.get(
-        "from"
-    )
-
-    to_date = request.args.get(
-        "to"
-    )
+    interval = request.args.get("interval", "day")
+    from_date = request.args.get("from")
+    to_date = request.args.get("to")
 
     return upstox.historical_by_symbol(
-
         symbol,
-
         interval,
-
         to_date,
-
         from_date
+    )
 
-)
+
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
