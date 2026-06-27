@@ -1,7 +1,28 @@
 services:
   - type: web
-    name: upstox-orb-proxy
+    name: ultimate-nse-scanner
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    branch: main
+
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+
+    startCommand: |
+      gunicorn app:app --workers 2 --threads 4 --timeout 120
+
+    autoDeploy: true
+
+    healthCheckPath: /health
+
+    envVars:
+
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+      - key: TZ
+        value: Asia/Kolkata
+
+      - key: UPSTOX_ACCESS_TOKEN
+        sync: false
