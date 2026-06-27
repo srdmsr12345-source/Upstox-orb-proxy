@@ -118,3 +118,88 @@ class NSEData:
 
 
 nse = NSEData()
+    def get_bhavcopy(self, date=None):
+
+        key = f"bhavcopy_{(date or datetime.now()).strftime('%Y%m%d')}"
+
+        cached = cache.get(key, max_age=86400)
+
+        if cached is not None:
+
+            return pd.DataFrame(cached)
+
+        df = self.read_zip_csv(
+
+            self.download(
+
+                self.bhavcopy_url(date)
+
+            )
+
+        )
+
+        cache.save(
+
+            key,
+
+            df.to_dict("records")
+
+        )
+
+        return df
+
+
+    def get_delivery(self, date=None):
+
+        key = f"delivery_{(date or datetime.now()).strftime('%Y%m%d')}"
+
+        cached = cache.get(key, max_age=86400)
+
+        if cached is not None:
+
+            return pd.DataFrame(cached)
+
+        df = self.read_csv(
+
+            self.download(
+
+                self.delivery_url(date)
+
+            )
+
+        )
+
+        cache.save(
+
+            key,
+
+            df.to_dict("records")
+
+        )
+
+        return df
+
+
+    def merge_bhav_delivery(self, date=None):
+
+        bhav = self.get_bhavcopy(date)
+
+        delivery = self.get_delivery(date)
+
+        delivery.columns = delivery.columns.str.strip()
+
+        bhav.columns = bhav.columns.str.strip()
+
+        merged = bhav.merge(
+
+            delivery,
+
+            left_on="SYMBOL",
+
+            right_on="SYMBOL",
+
+            how="left"
+
+        )
+
+        return merged
