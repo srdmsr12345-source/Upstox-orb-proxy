@@ -218,3 +218,162 @@ class UpstoxAPI:
         data = json.loads(raw)
 
         instruments = []
+        for item in data:
+
+            if item.get("segment") != "NSE_EQ":
+                continue
+
+            symbol = (
+                item.get("trading_symbol")
+                or item.get("tradingsymbol")
+                or ""
+            )
+
+            if not symbol:
+                continue
+
+            instruments.append({
+
+                "symbol": symbol,
+
+                "name": item.get("name", ""),
+
+                "isin": item.get("isin", ""),
+
+                "instrument_key": item.get(
+                    "instrument_key",
+                    ""
+                ),
+
+                "exchange": item.get(
+                    "exchange",
+                    "NSE"
+                ),
+
+                "lot_size": item.get(
+                    "lot_size",
+                    1
+                ),
+
+                "tick_size": item.get(
+                    "tick_size",
+                    0.05
+                )
+
+            })
+
+        cache.save(
+
+            "upstox_instruments",
+
+            instruments
+
+        )
+
+        return instruments
+
+
+    def instrument_lookup(self):
+
+        instruments = self.get_instruments()
+
+        lookup = {}
+
+        for item in instruments:
+
+            lookup[item["symbol"]] = item
+
+        return lookup
+
+
+    def instrument_key(self, symbol):
+
+        lookup = self.instrument_lookup()
+
+        stock = lookup.get(symbol)
+
+        if stock is None:
+
+            return None
+
+        return stock["instrument_key"]
+
+
+    def ltp_by_symbol(self, symbol):
+
+        key = self.instrument_key(symbol)
+
+        if key is None:
+
+            return None
+
+        return self.get_ltp(key)
+
+
+    def ohlc_by_symbol(self, symbol):
+
+        key = self.instrument_key(symbol)
+
+        if key is None:
+
+            return None
+
+        return self.get_ohlc(key)
+
+
+    def historical_by_symbol(
+
+        self,
+
+        symbol,
+
+        interval,
+
+        to_date,
+
+        from_date
+
+    ):
+
+        key = self.instrument_key(symbol)
+
+        if key is None:
+
+            return None
+
+        return self.get_historical(
+
+            key,
+
+            interval,
+
+            to_date,
+
+            from_date
+
+        )
+
+
+    def intraday_by_symbol(
+
+        self,
+
+        symbol,
+
+        interval
+
+    ):
+
+        key = self.instrument_key(symbol)
+
+        if key is None:
+
+            return None
+
+        return self.get_intraday(
+
+            key,
+
+            interval
+
+        )
