@@ -2,69 +2,192 @@
 <html>
 
 <head>
-    <title>AI Stock Scanner Test</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>AI Stock Scanner V2</title>
+
+<style>
+
+body{
+    font-family:Arial;
+    background:#f5f5f5;
+    margin:20px;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+    background:white;
+    padding:20px;
+    border-radius:10px;
+}
+
+select,input,button{
+    width:100%;
+    padding:12px;
+    margin-top:10px;
+    margin-bottom:10px;
+    font-size:16px;
+}
+
+button{
+    background:#1976d2;
+    color:white;
+    border:none;
+    border-radius:6px;
+}
+
+button:hover{
+    background:#125ca1;
+}
+
+.card{
+    background:#eef6ff;
+    padding:15px;
+    border-radius:8px;
+    margin-top:20px;
+    white-space:pre-line;
+}
+
+pre{
+    background:#111;
+    color:#00ff00;
+    padding:15px;
+    overflow:auto;
+    border-radius:8px;
+    font-size:12px;
+}
+
+</style>
+
 </head>
 
-<body style="font-family:Arial;padding:20px;">
+<body>
 
-<h2>AI Stock Scanner Test</h2>
+<div class="container">
+
+<h2>AI Stock Scanner Version 2.0</h2>
+
+<label>Scanner</label>
 
 <select id="scan">
-    <option value="bottom">Bottom Fishing</option>
-    <option value="orb">ORB</option>
-    <option value="stage2">Stage 2</option>
-    <option value="volume">Volume Breakout</option>
-    <option value="smartmoney">Smart Money</option>
+
+<option value="bottom">Bottom Fishing</option>
+
+<option value="orb">ORB</option>
+
+<option value="stage2">Stage 2</option>
+
+<option value="volume">Volume Breakout</option>
+
+<option value="smartmoney">Smart Money</option>
+
+<option value="relativestrength">Relative Strength</option>
+
 </select>
 
-<br><br>
+<label>Manual Date (Optional)</label>
 
-<button onclick="runScan()">Run Scan</button>
+<input
+type="date"
+id="date"
+>
 
-<br><br>
+<button onclick="runScan()">
 
-<pre id="result">Ready...</pre>
+Run Scan
+
+</button>
+
+<div
+id="info"
+class="card">
+
+Waiting...
+
+</div>
+
+<pre
+id="result">
+
+No Result
+
+</pre>
+
+</div>
 
 <script>
 
-async function runScan() {
+async function runScan(){
 
-    const result = document.getElementById("result");
+document.getElementById("info").innerHTML="Scanning...";
 
-    result.textContent = "Loading...";
+document.getElementById("result").textContent="Loading...";
 
-    try {
+const form=new FormData();
 
-        const form = new FormData();
+form.append(
+"scan_type",
+document.getElementById("scan").value
+);
 
-        form.append(
-            "scan_type",
-            document.getElementById("scan").value
-        );
+const d=document.getElementById("date").value;
 
-        const response = await fetch("/scan", {
-            method: "POST",
-            body: form
-        });
+if(d!="")
+form.append("date",d);
 
-        const text = await response.text();
+try{
 
-        result.textContent =
-            "HTTP Status : " +
-            response.status +
-            "\n\n" +
-            text;
+const r=await fetch("/scan",{
 
-    }
+method:"POST",
 
-    catch (err) {
+body:form
 
-        result.textContent =
-            "ERROR\n\n" +
-            err.toString();
+});
 
-    }
+const j=await r.json();
+
+if(j.success){
+
+let text="";
+
+text+="Scanner : "+j.scan_info.scanner+"\n";
+
+text+="Mode : "+j.scan_info.mode+"\n";
+
+text+="Requested Date : "+(j.scan_info.requested_date||"AUTO")+"\n";
+
+text+="Actual Data Date : "+j.scan_info.actual_data_date+"\n";
+
+text+="Rows : "+j.rows+"\n";
+
+text+="Status : "+j.scan_info.status;
+
+document.getElementById("info").textContent=text;
+
+document.getElementById("result").textContent=
+JSON.stringify(j.data,null,2);
+
+}
+else{
+
+document.getElementById("info").textContent="ERROR";
+
+document.getElementById("result").textContent=j.error;
+
+}
+
+}catch(e){
+
+document.getElementById("info").textContent="NETWORK ERROR";
+
+document.getElementById("result").textContent=e;
+
+}
 
 }
 
@@ -72,4 +195,4 @@ async function runScan() {
 
 </body>
 
-</html>
+    </html>
