@@ -1,7 +1,4 @@
-from flask import Flask
-from flask import render_template
-from flask import request
-from flask import jsonify
+from flask import Flask, render_template, request, jsonify
 
 from modules.upstox import UpstoxAPI
 from modules.nse import nse
@@ -20,6 +17,17 @@ def home():
     return render_template("index.html")
 
 
+# -----------------------------
+# TEST PAGE
+# -----------------------------
+@app.route("/test")
+def test():
+    return render_template("test.html")
+
+
+# -----------------------------
+# API INFO
+# -----------------------------
 @app.route("/api")
 def api():
 
@@ -29,6 +37,7 @@ def api():
         "status": "running",
         "endpoints": [
             "/",
+            "/test",
             "/scan",
             "/health",
             "/symbols",
@@ -40,6 +49,9 @@ def api():
     })
 
 
+# -----------------------------
+# VERSION
+# -----------------------------
 @app.route("/version")
 def version():
 
@@ -49,6 +61,9 @@ def version():
     })
 
 
+# -----------------------------
+# HEALTH
+# -----------------------------
 @app.route("/health")
 def health():
 
@@ -58,6 +73,9 @@ def health():
     })
 
 
+# -----------------------------
+# SCAN
+# -----------------------------
 @app.route("/scan", methods=["POST"])
 def scan():
 
@@ -105,9 +123,7 @@ def scan():
 
                 "actual_data_date": actual_date,
 
-                "mode": "AUTO"
-                if not requested_date
-                else "MANUAL",
+                "mode": "AUTO" if not requested_date else "MANUAL",
 
                 "status": "SUCCESS"
 
@@ -134,6 +150,9 @@ def scan():
         }), 500
 
 
+# -----------------------------
+# SYMBOLS
+# -----------------------------
 @app.route("/symbols")
 def symbols():
 
@@ -148,6 +167,9 @@ def symbols():
     })
 
 
+# -----------------------------
+# LTP
+# -----------------------------
 @app.route("/ltp/<symbol>")
 def ltp(symbol):
 
@@ -158,6 +180,9 @@ def ltp(symbol):
     )
 
 
+# -----------------------------
+# OHLC
+# -----------------------------
 @app.route("/ohlc/<symbol>")
 def ohlc(symbol):
 
@@ -168,6 +193,9 @@ def ohlc(symbol):
     )
 
 
+# -----------------------------
+# HISTORY
+# -----------------------------
 @app.route("/history/<symbol>")
 def history(symbol):
 
@@ -201,6 +229,9 @@ def history(symbol):
     )
 
 
+# -----------------------------
+# MAIN
+# -----------------------------
 if __name__ == "__main__":
 
     app.run(
@@ -211,4 +242,4 @@ if __name__ == "__main__":
 
         debug=True
 
-)
+    )
