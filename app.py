@@ -1,4 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask
+from flask import render_template
+from flask import request
+from flask import jsonify
+import traceback
 
 from modules.upstox import UpstoxAPI
 from modules.nse import nse
@@ -17,41 +21,21 @@ def home():
     return render_template("index.html")
 
 
-# -----------------------------
-# TEST PAGE
-# -----------------------------
 @app.route("/test")
 def test():
     return render_template("test.html")
 
 
-# -----------------------------
-# API INFO
-# -----------------------------
 @app.route("/api")
 def api():
 
     return jsonify({
         "name": "AI Stock Scanner API",
         "version": "2.0.0",
-        "status": "running",
-        "endpoints": [
-            "/",
-            "/test",
-            "/scan",
-            "/health",
-            "/symbols",
-            "/ltp/<symbol>",
-            "/ohlc/<symbol>",
-            "/history/<symbol>",
-            "/version"
-        ]
+        "status": "running"
     })
 
 
-# -----------------------------
-# VERSION
-# -----------------------------
 @app.route("/version")
 def version():
 
@@ -61,21 +45,14 @@ def version():
     })
 
 
-# -----------------------------
-# HEALTH
-# -----------------------------
 @app.route("/health")
 def health():
 
     return jsonify({
-        "status": "ok",
-        "service": "scanner"
+        "status": "ok"
     })
 
 
-# -----------------------------
-# SCAN
-# -----------------------------
 @app.route("/scan", methods=["POST"])
 def scan():
 
@@ -86,9 +63,7 @@ def scan():
             "bottom"
         )
 
-        requested_date = request.form.get(
-            "date"
-        )
+        requested_date = request.form.get("date")
 
         info = nse.merge_bhav_delivery(
             requested_date
@@ -103,13 +78,9 @@ def scan():
             merged
         )
 
-        result = ai_ranker.top(
-            result
-        )
+        result = ai_ranker.top(result)
 
-        summary = ai_ranker.summary(
-            result
-        )
+        summary = ai_ranker.summary(result)
 
         return jsonify({
 
@@ -141,18 +112,19 @@ def scan():
 
     except Exception as e:
 
+        traceback.print_exc()
+
         return jsonify({
 
             "success": False,
 
-            "error": str(e)
+            "error": str(e),
+
+            "type": type(e).__name__
 
         }), 500
 
 
-# -----------------------------
-# SYMBOLS
-# -----------------------------
 @app.route("/symbols")
 def symbols():
 
@@ -167,9 +139,6 @@ def symbols():
     })
 
 
-# -----------------------------
-# LTP
-# -----------------------------
 @app.route("/ltp/<symbol>")
 def ltp(symbol):
 
@@ -180,9 +149,6 @@ def ltp(symbol):
     )
 
 
-# -----------------------------
-# OHLC
-# -----------------------------
 @app.route("/ohlc/<symbol>")
 def ohlc(symbol):
 
@@ -193,9 +159,6 @@ def ohlc(symbol):
     )
 
 
-# -----------------------------
-# HISTORY
-# -----------------------------
 @app.route("/history/<symbol>")
 def history(symbol):
 
@@ -204,13 +167,9 @@ def history(symbol):
         "day"
     )
 
-    from_date = request.args.get(
-        "from"
-    )
+    from_date = request.args.get("from")
 
-    to_date = request.args.get(
-        "to"
-    )
+    to_date = request.args.get("to")
 
     return jsonify(
 
@@ -229,9 +188,6 @@ def history(symbol):
     )
 
 
-# -----------------------------
-# MAIN
-# -----------------------------
 if __name__ == "__main__":
 
     app.run(
