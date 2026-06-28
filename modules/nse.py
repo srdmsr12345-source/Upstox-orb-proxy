@@ -21,28 +21,27 @@ NSE_HEADERS = {
 class NSEData:
 
     def __init__(self):
+
         self.session = requests.Session()
         self.session.headers.update(NSE_HEADERS)
 
-    # ------------------------------------
-    # Smart Trading Day Engine
-    # ------------------------------------
+    # ==========================================
+    # DATE ENGINE
+    # ==========================================
 
     def today(self):
         return datetime.now()
 
-    def is_weekend(self, date):
-        return date.weekday() >= 5
+    def is_weekend(self, d):
+        return d.weekday() >= 5
 
-    def previous_day(self, date):
-        return date - timedelta(days=1)
+    def previous_day(self, d):
+        return d - timedelta(days=1)
 
-    def previous_trading_day(self, date):
-
-        d = date
+    def previous_trading_day(self, d):
 
         while self.is_weekend(d):
-            d = self.previous_day(d)
+            d -= timedelta(days=1)
 
         return d
 
@@ -52,10 +51,20 @@ class NSEData:
             date = self.today()
 
         if isinstance(date, str):
-            date = datetime.strptime(
-                date,
-                "%Y-%m-%d"
-            )
+
+            try:
+
+                date = datetime.strptime(
+                    date,
+                    "%Y-%m-%d"
+                )
+
+            except:
+
+                date = datetime.strptime(
+                    date,
+                    "%d/%m/%Y"
+                )
 
         return date
 
@@ -65,44 +74,38 @@ class NSEData:
 
         now = self.today()
 
-        # Market open hone se pehle
         if (
             date.date() == now.date()
             and
             now.hour < 19
         ):
-            date = self.previous_day(date)
+            date -= timedelta(days=1)
 
-        date = self.previous_trading_day(date)
+        return self.previous_trading_day(date)
 
-        return date
+    # ==========================================
+    # URL BUILDERS
+    # ==========================================
 
-    # ------------------------------------
-    # URL Builders
-    # ------------------------------------
-
-    def bhavcopy_url(self, date=None):
-
-        date = self.effective_date(date)
+    def bhavcopy_url(self, d):
 
         return (
             "https://nsearchives.nseindia.com/"
             "content/cm/"
-            f"BhavCopy_NSE_CM_0_0_0_{date.strftime('%Y%m%d')}_F_0000.csv.zip"
+            f"BhavCopy_NSE_CM_0_0_0_{d.strftime('%Y%m%d')}_F_0000.csv.zip"
         )
 
-    def delivery_url(self, date=None):
-
-        date = self.effective_date(date)
+    def delivery_url(self, d):
 
         return (
             "https://nsearchives.nseindia.com/"
             "products/content/"
-            f"sec_bhavdata_full_{date.strftime('%d%b%Y').upper()}.csv"
-)
-            # ------------------------------------
-    # Download Engine
-    # ------------------------------------
+            f"sec_bhavdata_full_{d.strftime('%d%b%Y').upper()}.csv"
+        )
+
+    # ==========================================
+    # DOWNLOAD
+    # ==========================================
 
     def download(self, url):
 
@@ -115,14 +118,11 @@ class NSEData:
 
         return r.content
 
-
-    def safe_download(self, url_builder, date):
-
-        """
-        Try current date.
-        If 404 comes, automatically move to previous
-        trading day (maximum 10 attempts).
-        """
+    def safe_download(
+        self,
+        url_builder,
+        date=None
+    ):
 
         current = self.effective_date(date)
 
@@ -152,10 +152,9 @@ class NSEData:
             "No NSE file found for last 10 trading days."
         )
 
-
-    # ------------------------------------
-    # File Readers
-    # ------------------------------------
+    # ==========================================
+    # READERS
+    # ==========================================
 
     def read_zip_csv(self, content):
 
@@ -169,29 +168,33 @@ class NSEData:
 
             df = pd.read_csv(f)
 
-        return df
+        df.columns = df.columns.str.strip()
 
+        return df
 
     def read_csv(self, content):
 
-        return pd.read_csv(
+        df = pd.read_csv(
             io.BytesIO(content)
         )
 
+        df.columns = df.columns.str.strip()
 
-    # ------------------------------------
-    # Cache Helpers
-    # ------------------------------------
+        return df
 
-    def cache_key(self, prefix, date):
+    # ==========================================
+    # CACHE
+    # ==========================================
+
+    def cache_key(self, prefix, d):
 
         return (
             f"{prefix}_"
-            f"{date.strftime('%Y%m%d')}"
-)
-            # ------------------------------------
-    # Bhavcopy
-    # ------------------------------------
+            f"{d.strftime('%Y%m%d')}"
+        )
+            # ==========================================
+    # BHAVCOPY
+    # ==========================================
 
     def get_bhavcopy(self, date=None):
 
@@ -219,8 +222,6 @@ class NSEData:
 
         df = self.read_zip_csv(content)
 
-        df.columns = df.columns.str.strip()
-
         cache.save(
             key,
             df.to_dict("records")
@@ -231,9 +232,9 @@ class NSEData:
             actual_date
         )
 
-    # ------------------------------------
-    # Delivery
-    # ------------------------------------
+    # ==========================================
+    # DELIVERY
+    # ==========================================
 
     def get_delivery(self, date=None):
 
@@ -261,8 +262,6 @@ class NSEData:
 
         df = self.read_csv(content)
 
-        df.columns = df.columns.str.strip()
-
         cache.save(
             key,
             df.to_dict("records")
@@ -273,9 +272,9 @@ class NSEData:
             actual_date
         )
 
-    # ------------------------------------
-    # Merge
-    # ------------------------------------
+    # ==========================================
+    # MERGE
+    # ==========================================
 
     def merge_bhav_delivery(self, date=None):
 
@@ -292,21 +291,19 @@ class NSEData:
         return {
             "date": actual_date.strftime("%d-%b-%Y"),
             "data": merged
-}
-            # ------------------------------------
-    # Utility
-    # ------------------------------------
+        }
+
+    # ==========================================
+    # PUBLIC API
+    # ==========================================
 
     def latest_data(self, date=None):
-        """
-        Returns:
-        {
-            "date": "26-Jun-2026",
-            "data": DataFrame
-        }
-        """
+
         return self.merge_bhav_delivery(date)
 
 
-# Global Object
+# ==========================================
+# GLOBAL OBJECT
+# ==========================================
+
 nse = NSEData()
