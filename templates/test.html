@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scanner Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family:Arial;padding:20px">
+
+<h2>AI Stock Scanner Test</h2>
+
+<select id="scan">
+    <option value="bottom">Bottom Fishing</option>
+    <option value="orb">ORB</option>
+    <option value="stage2">Stage 2</option>
+    <option value="volume">Volume Breakout</option>
+    <option value="smartmoney">Smart Money</option>
+</select>
+
+<br><br>
+
+<button onclick="runScan()">Run Scan</button>
+
+<pre id="result"></pre>
+
+<script>
+async function runScan(){
+
+    const form = new FormData();
+    form.append("scan_type",document.getElementById("scan").value);
+
+    const r = await fetch("/scan",{
+        method:"POST",
+        body:form
+    });
+
+    const j = await r.json();
+
+    document.getElementById("result").textContent=
+        JSON.stringify(j,null,2);
+}
+</script>
+
+</body>
+      </html>
