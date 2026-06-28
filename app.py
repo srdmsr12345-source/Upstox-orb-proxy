@@ -18,6 +18,9 @@ upstox = UpstoxAPI(ACCESS_TOKEN)
 def home():
     return render_template("index.html")
 
+@app.route("/test")
+def test():
+    return render_template("test.html")
 
 @app.route("/scan", methods=["POST"])
 def scan():
