@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Scanner Test</title>
+    <title>AI Stock Scanner Test</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
-<body style="font-family:Arial;padding:20px">
+
+<body style="font-family:Arial;padding:20px;">
 
 <h2>AI Stock Scanner Test</h2>
 
@@ -20,25 +22,54 @@
 
 <button onclick="runScan()">Run Scan</button>
 
-<pre id="result"></pre>
+<br><br>
+
+<pre id="result">Ready...</pre>
 
 <script>
-async function runScan(){
 
-    const form = new FormData();
-    form.append("scan_type",document.getElementById("scan").value);
+async function runScan() {
 
-    const r = await fetch("/scan",{
-        method:"POST",
-        body:form
-    });
+    const result = document.getElementById("result");
 
-    const j = await r.json();
+    result.textContent = "Loading...";
 
-    document.getElementById("result").textContent=
-        JSON.stringify(j,null,2);
+    try {
+
+        const form = new FormData();
+
+        form.append(
+            "scan_type",
+            document.getElementById("scan").value
+        );
+
+        const response = await fetch("/scan", {
+            method: "POST",
+            body: form
+        });
+
+        const text = await response.text();
+
+        result.textContent =
+            "HTTP Status : " +
+            response.status +
+            "\n\n" +
+            text;
+
+    }
+
+    catch (err) {
+
+        result.textContent =
+            "ERROR\n\n" +
+            err.toString();
+
+    }
+
 }
+
 </script>
 
 </body>
-      </html>
+
+</html>
