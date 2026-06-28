@@ -39,6 +39,62 @@ def scan():
     }
 
 
+@app.route("/api")
+def api():
+    return {
+        "name": "AI Stock Scanner API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "/",
+            "/scan",
+            "/health",
+            "/symbols",
+            "/ltp/<symbol>",
+            "/ohlc/<symbol>",
+            "/history/<symbol>",
+            "/docs",
+            "/version"
+        ]
+    }
+
+
+@app.route("/docs")
+def docs():
+    return {
+        "application": "AI Stock Scanner",
+        "version": "1.0.0",
+        "routes": {
+            "/": "Home Page",
+            "/scan": "POST Scan API",
+            "/health": "Health Check",
+            "/symbols": "All NSE Symbols",
+            "/ltp/<symbol>": "Live Price",
+            "/ohlc/<symbol>": "Current OHLC",
+            "/history/<symbol>": "Historical Data",
+            "/api": "API Information",
+            "/version": "Application Version"
+        },
+        "supported_scanners": [
+            "bottom",
+            "orb",
+            "stage2",
+            "momentum",
+            "volumebreakout",
+            "relativestrength"
+        ]
+    }
+
+
+@app.route("/version")
+def version():
+    return {
+        "application": "AI Stock Scanner",
+        "version": "1.0.0",
+        "status": "production"
+    }
+
+
 @app.route("/health")
 def health():
     return {
@@ -49,6 +105,7 @@ def health():
 
 @app.route("/symbols")
 def symbols():
+
     data = upstox.get_instruments()
 
     return {
@@ -59,11 +116,13 @@ def symbols():
 
 @app.route("/ltp/<symbol>")
 def ltp(symbol):
+
     return upstox.ltp_by_symbol(symbol)
 
 
 @app.route("/ohlc/<symbol>")
 def ohlc(symbol):
+
     return upstox.ohlc_by_symbol(symbol)
 
 
@@ -87,4 +146,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=5000,
         debug=True
-    )
+        )
