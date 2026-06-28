@@ -1,7 +1,4 @@
-from flask import Flask
-from flask import render_template
-from flask import request
-from flask import jsonify
+from flask import Flask, render_template, request, jsonify
 import traceback
 
 from modules.upstox import UpstoxAPI
@@ -28,7 +25,6 @@ def test():
 
 @app.route("/api")
 def api():
-
     return jsonify({
         "name": "AI Stock Scanner API",
         "version": "2.0.0",
@@ -38,7 +34,6 @@ def api():
 
 @app.route("/version")
 def version():
-
     return jsonify({
         "application": "AI Stock Scanner",
         "version": "2.0.0"
@@ -47,7 +42,6 @@ def version():
 
 @app.route("/health")
 def health():
-
     return jsonify({
         "status": "ok"
     })
@@ -63,7 +57,9 @@ def scan():
             "bottom"
         )
 
-        requested_date = request.form.get("date")
+        requested_date = request.form.get(
+            "date"
+        )
 
         info = nse.merge_bhav_delivery(
             requested_date
@@ -78,9 +74,13 @@ def scan():
             merged
         )
 
-        result = ai_ranker.top(result)
+        result = ai_ranker.top(
+            result
+        )
 
-        summary = ai_ranker.summary(result)
+        summary = ai_ranker.summary(
+            result
+        )
 
         return jsonify({
 
@@ -128,74 +128,4 @@ def scan():
 @app.route("/symbols")
 def symbols():
 
-    data = upstox.get_instruments()
-
-    return jsonify({
-
-        "count": len(data),
-
-        "data": data
-
-    })
-
-
-@app.route("/ltp/<symbol>")
-def ltp(symbol):
-
-    return jsonify(
-
-        upstox.ltp_by_symbol(symbol)
-
-    )
-
-
-@app.route("/ohlc/<symbol>")
-def ohlc(symbol):
-
-    return jsonify(
-
-        upstox.ohlc_by_symbol(symbol)
-
-    )
-
-
-@app.route("/history/<symbol>")
-def history(symbol):
-
-    interval = request.args.get(
-        "interval",
-        "day"
-    )
-
-    from_date = request.args.get("from")
-
-    to_date = request.args.get("to")
-
-    return jsonify(
-
-        upstox.historical_by_symbol(
-
-            symbol,
-
-            interval,
-
-            to_date,
-
-            from_date
-
-        )
-
-    )
-
-
-if __name__ == "__main__":
-
-    app.run(
-
-        host="0.0.0.0",
-
-        port=5000,
-
-        debug=True
-
-    )
+    data = upstox.get
