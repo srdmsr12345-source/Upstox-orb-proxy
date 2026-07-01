@@ -154,6 +154,20 @@ AI_WEIGHT_UPPER = 5
 MAX_RESULTS = 20
 
 # ==========================
+# PRE-FILTER (before history fetch)
+# ==========================
+# Saare scanners ko EMA/RSI ke liye historical data chahiye, jo fetch
+# karna slow hai 2000 stocks ke liye. Isliye bhav-copy ke single-day
+# data se pehle ek halka filter laga dete hain - sirf wahi stocks
+# history fetch karenge jo basic liquidity/price criteria pass karte hain.
+
+PREFILTER_MIN_PRICE = 20
+
+PREFILTER_MIN_TURNOVER_LAKH = 50  # min turnover in lakhs (close * volume)
+
+PREFILTER_MAX_CANDIDATES = 400  # itne se zyada stocks history fetch nahi karenge
+
+# ==========================
 # FILTERS
 # ==========================
 
@@ -166,3 +180,4 @@ MIN_MARKET_CAP_CR = 1000
 LOG_LEVEL = "INFO"
 
 DEBUG = False
+    
