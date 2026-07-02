@@ -8,6 +8,14 @@ from config import (
 
 
 class BottomFishingScanner:
+    """
+    Bottom Fishing: stocks jo apne 120-day low ke kareeb hain lekin aaj
+    high volume + high delivery% ke saath upar band hue (accumulation
+    signal). Yeh scanner ab AVG_VOL_20 aur LOW_120 columns expect karta
+    hai jo HISTORY se calculate hoke aate hain (modules/history.py se) -
+    pehle yeh values galat tarike se single-day data par rolling() laga
+    ke nikali jaati thi, jo hamesha NaN ya wahi single value deti thi.
+    """
 
     def __init__(self):
         pass
@@ -15,40 +23,26 @@ class BottomFishingScanner:
     def scan(self, df):
 
         df = df.copy()
-
         df.columns = df.columns.str.strip()
 
-        # Find today's low (replace with 120-day low later if history is available)
-        df["LOW_120"] = df["LOW"]
+        required = ["CLOSE", "OPEN", "LOW", "AVG_VOL_20", "LOW_120", "TOTTRDQTY"]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            # History merge nahi hui hai - is scanner ko skip karte hain
+            # khaali result ke saath, error throw nahi karte.
+            return pd.DataFrame()
 
         df["BOTTOM_DISTANCE"] = (
             (df["CLOSE"] - df["LOW_120"])
             / df["LOW_120"]
         ) * 100
 
-        volume_col = None
-        delivery_col = None
-
-        for col in df.columns:
-
-            name = col.upper()
-
-            if "DELIV" in name:
-                delivery_col = col
-
-            if "TOTTRDQTY" in name:
-                volume_col = col
-
-        if volume_col is None:
-            volume_col = "TOTTRDQTY"
-
         df["VOLUME_RATIO"] = (
-            df[volume_col]
-            / df[volume_col].rolling(20, min_periods=1).mean()
-        )
+            df["TOTTRDQTY"] / df["AVG_VOL_20"]
+        ).replace([float("inf"), -float("inf")], 0).fillna(0)
 
-        if delivery_col is not None:
-            df["DELIVERY_PERCENT"] = df[delivery_col]
+        if "DELIV_PER" in df.columns:
+            df["DELIVERY_PERCENT"] = df["DELIV_PER"]
         else:
             df["DELIVERY_PERCENT"] = 0
 
@@ -96,3 +90,4 @@ class BottomFishingScanner:
 
 
 bottom_scanner = BottomFishingScanner()
+                 
