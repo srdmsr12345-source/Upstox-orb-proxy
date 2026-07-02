@@ -4,6 +4,12 @@ from config import MIN_VOLUME_RATIO
 
 
 class VolumeScanner:
+    """
+    Volume Spike: aaj ka volume real 20-day average se kitna zyada hai.
+    AVG_VOL_20 column history fetch se aata hai (modules/history.py) -
+    pehle yeh wrongly single-day data par rolling() se calculate hota
+    tha, jo galat (NaN/same-value) results deta tha.
+    """
 
     def __init__(self):
         pass
@@ -13,26 +19,12 @@ class VolumeScanner:
         df = df.copy()
         df.columns = df.columns.str.strip()
 
-        volume_col = None
-
-        for col in df.columns:
-            if "TOTTRDQTY" in col.upper():
-                volume_col = col
-                break
-
-        if volume_col is None:
+        if "TOTTRDQTY" not in df.columns or "AVG_VOL_20" not in df.columns:
             return pd.DataFrame()
 
-        df["AVG_VOLUME"] = (
-            df[volume_col]
-            .rolling(20, min_periods=1)
-            .mean()
-        )
-
         df["VOLUME_RATIO"] = (
-            df[volume_col]
-            / df["AVG_VOLUME"]
-        )
+            df["TOTTRDQTY"] / df["AVG_VOL_20"]
+        ).replace([float("inf"), -float("inf")], 0).fillna(0)
 
         result = df[
             df["VOLUME_RATIO"] >= MIN_VOLUME_RATIO
@@ -72,3 +64,4 @@ class VolumeScanner:
 
 
 volume_scanner = VolumeScanner()
+        
