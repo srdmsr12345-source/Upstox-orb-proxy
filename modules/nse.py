@@ -222,6 +222,28 @@ class NSEData:
 
         df = self.read_zip_csv(content)
 
+        # Nov-2025 ke baad NSE ne bhavcopy mein pre-open session data bhi
+        # daalna shuru kar diya (session indicators I1/I2 for interim,
+        # F1/F2 for final). Hum sirf regular EQ series + final session
+        # chahte hain, warna duplicate/galat rows aa jate hain. Agar
+        # SESSION column maujood ho to F session filter karo, warna
+        # purana format hai (skip).
+        if "SERIES" in df.columns:
+            df = df[df["SERIES"] == "EQ"]
+
+        session_col = None
+        for col in df.columns:
+            if col.upper() in ("SESSION", "SESS_ID", "SESSION_ID"):
+                session_col = col
+                break
+
+        if session_col is not None:
+            df = df[
+                df[session_col].astype(str).str.upper().str.startswith("F")
+            ]
+
+        df = df.reset_index(drop=True)
+
         cache.save(
             key,
             df.to_dict("records")
@@ -282,11 +304,59 @@ class NSEData:
 
         delivery, _ = self.get_delivery(actual_date)
 
+        # Dono files mein SYMBOL column ke aas-paas whitespace/case
+        # mismatch ho sakta hai - normalize karte hain merge se pehle
+        # taaki rows silently drop na ho jayein.
+        bhav = bhav.copy()
+        delivery = delivery.copy()
+
+        bhav.columns = bhav.columns.str.strip()
+        delivery.columns = delivery.columns.str.strip()
+
+        if "SYMBOL" in bhav.columns:
+            bhav["SYMBOL"] = bhav["SYMBOL"].astype(str).str.strip().str.upper()
+
+        if "SYMBOL" in delivery.columns:
+            delivery["SYMBOL"] = delivery["SYMBOL"].astype(str).str.strip().str.upper()
+
         merged = bhav.merge(
             delivery,
             on="SYMBOL",
             how="left"
         )
+
+        # Numeric columns ko explicitly numeric type mein convert karte
+        # hain - bhavcopy/delivery CSV se aane wale string values ko
+        # scanners ke saare numeric comparisons (>=, rolling, etc.) ke
+        # liye float hona zaroori hai.
+        numeric_cols = [
+            "OPEN", "HIGH", "LOW", "CLOSE", "LAST", "PREVCLOSE",
+            "TOTTRDQTY", "TOTTRDVAL", "TOTALTRADES"
+        ]
+        for col in numeric_cols:
+            if col in merged.columns:
+                merged[col] = pd.to_numeric(merged[col], errors="coerce")
+
+        # Delivery % column ka naam file format ke hisaab se badal sakta
+        # hai - dhoondh ke ek standard "DELIV_PER" naam de dete hain.
+        deliv_col = None
+        for col in merged.columns:
+            cu = col.upper()
+            if "DELIV" in cu and "PER" in cu:
+                deliv_col = col
+                break
+            if cu == "% DLY QT TO TRADED QTY" or cu == "DELIV_PER":
+                deliv_col = col
+                break
+
+        if deliv_col and deliv_col != "DELIV_PER":
+            merged["DELIV_PER"] = pd.to_numeric(merged[deliv_col], errors="coerce")
+        elif "DELIV_PER" in merged.columns:
+            merged["DELIV_PER"] = pd.to_numeric(merged["DELIV_PER"], errors="coerce")
+        else:
+            merged["DELIV_PER"] = 0.0
+
+        merged["DELIV_PER"] = merged["DELIV_PER"].fillna(0.0)
 
         return {
             "date": actual_date.strftime("%d-%b-%Y"),
@@ -307,3 +377,4 @@ class NSEData:
 # ==========================================
 
 nse = NSEData()
+    
