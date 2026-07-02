@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate NSE Scanner</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#03070d;color:#c8dff0;min-height:100vh}
+header{padding:12px 14px;background:#07111d;border-bottom:1px solid #152030;position:sticky;top:0;z-index:50}
+.hrow1{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.logo{display:flex;align-items:center;gap:8px}
+.logo-badge{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-weight:800;font-size:11px;padding:4px 9px;border-radius:6px}
+.logo-text{font-size:15px;font-weight:700;color:#fff}
+#ist{font-family:'JetBrains Mono',monospace;font-size:11px;color:#6366f1}
+.mkt-pill{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;border:1px solid #152030;background:#0b1a27;font-size:10px}
+.dot{width:6px;height:6px;border-radius:50%;background:#4a6a82}
+.dot.live{background:#10b981;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 5px rgba(16,185,129,0)}}
+
+.setup-banner{padding:12px 14px;background:#0a1020;border-bottom:1px solid #1a2040;display:flex;flex-direction:column;gap:8px}
+.setup-title{font-size:12px;font-weight:700;color:#818cf8}
+.setup-row{display:flex;gap:6px}
+.setup-input{flex:1;padding:9px 11px;background:#0b1a27;border:1px solid #1a2040;border-radius:7px;color:#c8dff0;font-size:12px;font-family:'JetBrains Mono',monospace}
+.setup-save{padding:9px 16px;background:#6366f1;color:#fff;border:none;border-radius:7px;font-weight:700;font-size:12px;cursor:pointer}
+.setup-status{font-size:11px;padding:6px 10px;border-radius:6px;display:none}
+.setup-status.ok{display:block;background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)}
+.setup-status.err{display:block;background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+.setup-status.info{display:block;background:rgba(99,102,241,.1);color:#818cf8;border:1px solid rgba(99,102,241,.2)}
+
+.scan-row{display:flex;gap:8px;padding:10px 14px;background:#07111d;border-bottom:1px solid #152030}
+.btn-scan{flex:1;padding:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif}
+.btn-scan:disabled{opacity:.4}
+
+.tabs{display:flex;gap:0;overflow-x:auto;border-bottom:1px solid #152030;background:#07111d}
+.tab{padding:9px 14px;font-size:11px;font-weight:600;color:#4a6a82;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px}
+.tab.active{color:#818cf8;border-bottom-color:#6366f1}
+
+.progress-wrap{display:none;padding:10px 14px;background:#07111d;border-bottom:1px solid #152030}
+.progress-wrap.show{display:block}
+.prog-bar{height:3px;background:#0f2235;border-radius:2px;overflow:hidden;margin-bottom:6px}
+.prog-fill{height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6);width:0;transition:width .3s}
+.prog-txt{font-size:11px;color:#4a6a82;font-family:'JetBrains Mono',monospace;text-align:center}
+
+.results{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 30px;text-align:center}
+.empty-ico{font-size:48px;opacity:.1}
+.empty-h{font-size:15px;font-weight:600;color:#1e3a52}
+.empty-p{font-size:12px;color:#4a6a82;line-height:1.6;max-width:300px}
+
+.scard{background:#07111d;border:1px solid #152030;border-radius:12px;padding:13px 14px;cursor:pointer}
+.scard.top1{border-color:rgba(99,102,241,.5);background:linear-gradient(135deg,#07111d,#0d1030)}
+.rank-badge{display:inline-block;background:#6366f1;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;margin-bottom:6px}
+.scard-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.s-sym{font-size:18px;font-weight:800;font-family:'JetBrains Mono',monospace;color:#fff}
+.s-name{font-size:11px;color:#4a6a82;margin-top:2px}
+.s-scanner{font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;font-family:'JetBrains Mono',monospace;margin-top:3px;display:inline-block}
+.sc-stage2{background:rgba(99,102,241,.15);color:#818cf8}
+.sc-smartmoney{background:rgba(16,185,129,.15);color:#10b981}
+.sc-bottom{background:rgba(245,158,11,.15);color:#f59e0b}
+.sc-volume{background:rgba(14,165,233,.15);color:#0ea5e9}
+.sc-momentum{background:rgba(239,68,68,.15);color:#ef4444}
+.sc-orb{background:rgba(168,85,247,.15);color:#a855f7}
+.sc-relative_strength{background:rgba(20,184,166,.15);color:#14b8a6}
+.s-price{font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;color:#fff;text-align:right}
+.s-chg-up{font-size:12px;font-family:'JetBrains Mono',monospace;color:#10b981;font-weight:600;text-align:right}
+.s-chg-dn{font-size:12px;font-family:'JetBrains Mono',monospace;color:#ef4444;font-weight:600;text-align:right}
+.kv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:6px}
+.kv{background:#0b1a27;border-radius:6px;padding:6px 8px}
+.kk{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#4a6a82}
+.kval{font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#fff;margin-top:2px}
+.kval.up{color:#10b981}
+.kval.down{color:#ef4444}
+.kval.mid{color:#f59e0b}
+.ai-row{margin-top:8px;padding-top:8px;border-top:1px solid #152030;font-size:11px;color:#a78bfa;line-height:1.5}
+
+.err-box{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:14px;margin:10px 12px;font-size:12px;line-height:1.7;color:#fca5a5}
+.err-box b{color:#ef4444}
+.err-box code{background:#0b1a27;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:10px}
+
+.summary-bar{padding:10px 14px;background:#0b1a27;border-bottom:1px solid #152030;font-size:12px;display:none}
+.summary-bar.show{display:flex;align-items:center;justify-content:space-between}
+.sum-stat{text-align:center}
+.sum-val{font-size:16px;font-weight:800;font-family:'JetBrains Mono',monospace;color:#818cf8}
+.sum-lbl{font-size:9px;color:#4a6a82;text-transform:uppercase}
+
+.reset-link{text-align:center;padding:6px;font-size:11px;color:#ef4444;text-decoration:underline;cursor:pointer}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:#03070d}
+::-webkit-scrollbar-thumb{background:#1c3048;border-radius:2px}
+.tabs::-webkit-scrollbar{height:2px}
+@media(min-width:700px){body{display:flex;flex-direction:column;align-items:center}header,.setup-banner,.scan-row,.tabs,.progress-wrap,.summary-bar,.results,.reset-link{max-width:680px;width:100%}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow1">
+    <div class="logo">
+      <div class="logo-badge">NSE</div>
+      <span class="logo-text">Ultimate NSE Scanner</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="mkt-pill"><div class="dot" id="mktDot"></div><span id="mktLbl">--</span></div>
+      <span id="ist">--:--:--</span>
+    </div>
+  </div>
+</header>
+
+<!-- PROXY SETUP -->
+<div class="setup-banner" id="proxyBanner">
+  <div class="setup-title">🌐 Step 1: Proxy Server URL</div>
+  <div class="setup-row">
+    <input class="setup-input" id="proxyInput" placeholder="https://upstox-orb-proxy.onrender.com">
+    <button class="setup-save" onclick="saveProxy()">Save</button>
+  </div>
+  <div class="setup-status" id="proxyStatus"></div>
+</div>
+
+<!-- TOKEN SETUP -->
+<div class="setup-banner" id="tokenBanner">
+  <div class="setup-title">🔑 Step 2: Upstox Access Token</div>
+  <div class="setup-row">
+    <input type="password" class="setup-input" id="tokenInput" placeholder="Upstox token yahan paste karein...">
+    <button class="setup-save" onclick="saveToken()">Save</button>
+  </div>
+  <div class="setup-status" id="tokenStatus"></div>
+</div>
+
+<div class="reset-link" onclick="resetAll()">🔄 Proxy/Token Reset Karein</div>
+
+<!-- SCAN BUTTON -->
+<div class="scan-row">
+  <button class="btn-scan" id="scanBtn" onclick="runScan()">🔬 Full NSE Scan (EMA + RSI + SmartMoney)</button>
+</div>
+
+<!-- TABS -->
+<div class="tabs" id="tabsRow" style="display:none">
+  <div class="tab active" onclick="showTab('all')" id="tab-all">All</div>
+  <div class="tab" onclick="showTab('stage2')" id="tab-stage2">Stage 2</div>
+  <div class="tab" onclick="showTab('smartmoney')" id="tab-smartmoney">Smart Money</div>
+  <div class="tab" onclick="showTab('bottom')" id="tab-bottom">Bottom</div>
+  <div class="tab" onclick="showTab('volume')" id="tab-volume">Volume</div>
+  <div class="tab" onclick="showTab('momentum')" id="tab-momentum">Momentum</div>
+  <div class="tab" onclick="showTab('orb')" id="tab-orb">ORB</div>
+</div>
+
+<!-- PROGRESS -->
+<div class="progress-wrap" id="progWrap">
+  <div class="prog-bar"><div class="prog-fill" id="progFill"></div></div>
+  <div class="prog-txt" id="progTxt">Scanning...</div>
+</div>
+
+<!-- SUMMARY BAR -->
+<div class="summary-bar" id="summaryBar">
+  <div class="sum-stat"><div class="sum-val" id="sumScanned">--</div><div class="sum-lbl">Scanned</div></div>
+  <div class="sum-stat"><div class="sum-val" id="sumCandidates">--</div><div class="sum-lbl">Candidates</div></div>
+  <div class="sum-stat"><div class="sum-val" id="sumResults">--</div><div class="sum-lbl">Results</div></div>
+  <div class="sum-stat"><div class="sum-val" id="sumTime">--</div><div class="sum-lbl">Seconds</div></div>
+</div>
+
+<!-- RESULTS -->
+<div class="results" id="resultsArea">
+  <div class="empty">
+    <div class="empty-ico">🔬</div>
+    <div class="empty-h">Ultimate NSE Scanner</div>
+    <div class="empty-p">Proxy URL aur Upstox Token save karo, phir scan karo. Yeh scanner NSE bhav-copy + real 90-day historical data use karke <b style="color:#818cf8">EMA/RSI/Stage2/SmartMoney</b> analysis karta hai.</div>
+  </div>
+</div>
+
+<script>
+let PROXY_BASE = localStorage.getItem('upstox_proxy') || '';
+let ACCESS_TOKEN = localStorage.getItem('upstox_token') || '';
+let allResults = {};
+let currentTab = 'all';
+
+// ── SETUP ──────────────────────────────────────────────────────────────────
+function saveProxy(){
+  let v = document.getElementById('proxyInput').value.trim().replace(/\/+$/,'');
+  if(!v){ setStatus('proxyStatus','err','URL khali hai'); return; }
+  PROXY_BASE = v;
+  try{ localStorage.setItem('upstox_proxy', v); }catch(e){}
+  setStatus('proxyStatus','ok','✓ Saved: '+v);
+  document.getElementById('proxyInput').value = '';
+}
+function saveToken(){
+  const v = document.getElementById('tokenInput').value.trim();
+  if(!v){ setStatus('tokenStatus','err','Token khali hai'); return; }
+  ACCESS_TOKEN = v;
+  try{ localStorage.setItem('upstox_token', v); }catch(e){}
+  setStatus('tokenStatus','ok','✓ Token saved ('+v.length+' chars)');
+  document.getElementById('tokenInput').value = '';
+}
+function setStatus(id, type, msg){
+  const el = document.getElementById(id);
+  el.className = 'setup-status '+type;
+  el.textContent = msg;
+}
+function resetAll(){
+  if(!confirm('Proxy aur Token dono clear honge. Pakka?')) return;
+  try{ localStorage.removeItem('upstox_proxy'); localStorage.removeItem('upstox_token'); }catch(e){}
+  PROXY_BASE = ''; ACCESS_TOKEN = '';
+  setStatus('proxyStatus','','');
+  setStatus('tokenStatus','','');
+}
+window.addEventListener('DOMContentLoaded', ()=>{
+  if(PROXY_BASE) setStatus('proxyStatus','info','Saved: '+PROXY_BASE);
+  if(ACCESS_TOKEN) setStatus('tokenStatus','info','Token saved ('+ACCESS_TOKEN.length+' chars)');
+});
+
+// ── CLOCK ──────────────────────────────────────────────────────────────────
+function tick(){
+  const ist = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+  const p = n=>String(n).padStart(2,'0');
+  document.getElementById('ist').textContent = p(ist.getHours())+':'+p(ist.getMinutes())+':'+p(ist.getSeconds());
+  const wd=ist.getDay(),h=ist.getHours(),m=ist.getMinutes();
+  const open = wd>0&&wd<6&&(h>9||(h===9&&m>=15))&&!(h>15||(h===15&&m>=30));
+  document.getElementById('mktDot').className = 'dot'+(open?' live':'');
+  document.getElementById('mktLbl').textContent = open?'Open':'Closed';
+}
+setInterval(tick,1000); tick();
+
+// ── SCAN ──────────────────────────────────────────────────────────────────
+function prog(p,t){
+  document.getElementById('progFill').style.width = p+'%';
+  document.getElementById('progTxt').textContent = t;
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function runScan(){
+  if(!PROXY_BASE){ setStatus('proxyStatus','err','Pehle Proxy URL save karein'); return; }
+  if(!ACCESS_TOKEN){ setStatus('tokenStatus','err','Pehle Upstox Token save karein'); return; }
+
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true; btn.textContent = 'Scanning...';
+  document.getElementById('progWrap').classList.add('show');
+  document.getElementById('summaryBar').classList.remove('show');
+  document.getElementById('tabsRow').style.display = 'none';
+  document.getElementById('resultsArea').innerHTML = '';
+  prog(5, 'NSE bhav-copy download ho rahi hai...');
+
+  try{
+    prog(10, 'Scan shuru ho raha hai (EMA/RSI/Stage2 ke liye 90-day history fetch hogi)...');
+
+    const resp = await fetch(PROXY_BASE + '/scan', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + ACCESS_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+
+    prog(85, 'Data process ho raha hai...');
+
+    if(!resp.ok){
+      const txt = await resp.text();
+      throw {status: resp.status, body: txt};
+    }
+
+    const data = await resp.json();
+    prog(100, 'Done ✓');
+    await sleep(300);
+    document.getElementById('progWrap').classList.remove('show');
+
+    if(!data.success){
+      showError('Scan failed', data.error || 'Unknown error');
+      return;
+    }
+
+    allResults = data.results || {};
+
+    // Summary
+    const totalResults = Object.values(allResults).reduce((s,arr)=>s+(arr?.length||0),0);
+    document.getElementById('sumScanned').textContent = data.total_scanned || '--';
+    document.getElementById('sumCandidates').textContent = data.candidates || '--';
+    document.getElementById('sumResults').textContent = totalResults;
+    document.getElementById('sumTime').textContent = data.elapsed_seconds || '--';
+    document.getElementById('summaryBar').classList.add('show');
+    document.getElementById('tabsRow').style.display = 'flex';
+
+    renderTab(currentTab);
+
+  }catch(err){
+    document.getElementById('progWrap').classList.remove('show');
+    let title = '⚠️ Error', msg = '';
+    if(err.status === 401){ title='🔑 Token Invalid'; msg='Naya token generate karke save karein.'; }
+    else if(err.status === 500){ title='🔥 Server Error'; msg='<code>'+String(err.body||'').slice(0,400)+'</code>'; }
+    else if(err instanceof TypeError){ title='🌐 Network Error'; msg='Proxy server tak pahunch nahi paaye. URL check karein: <code>'+PROXY_BASE+'</code>'; }
+    else { msg='Status: <code>'+err.status+'</code> Body: <code>'+String(err.body||err.message||'').slice(0,300)+'</code>'; }
+    showError(title, msg);
+  }finally{
+    btn.disabled = false; btn.textContent = '🔬 Re-Scan';
+  }
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+function showTab(tab){
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  const el = document.getElementById('tab-'+tab);
+  if(el) el.classList.add('active');
+  renderTab(tab);
+}
+
+function renderTab(tab){
+  const area = document.getElementById('resultsArea');
+  let stocks = [];
+  if(tab === 'all'){
+    const seen = new Set();
+    Object.entries(allResults).forEach(([scanner, arr])=>{
+      (arr||[]).forEach(r=>{ if(!seen.has(r.SYMBOL)){ seen.add(r.SYMBOL); stocks.push({...r, _scanner:scanner}); } });
+    });
+  } else {
+    stocks = (allResults[tab]||[]).map(r=>({...r, _scanner:tab}));
+  }
+
+  if(!stocks.length){
+    area.innerHTML = '<div class="empty"><div class="empty-ico">🔍</div><div class="empty-h">Is scanner mein koi candidate nahi mila</div><div class="empty-p">Dusra tab try karein ya dobara scan karein.</div></div>';
+    return;
+  }
+
+  area.innerHTML = stocks.map((s,i)=>renderCard(s,i)).join('');
+}
+
+function renderCard(s, idx){
+  const chgPct = s.CLOSE && s.PREVCLOSE ? (((s.CLOSE-s.PREVCLOSE)/s.PREVCLOSE)*100).toFixed(2) : null;
+  const isUp = chgPct !== null ? parseFloat(chgPct) >= 0 : true;
+  const scanner = s._scanner || '';
+  const scClass = 'sc-'+scanner;
+  const scLabels = {stage2:'Stage 2',smartmoney:'Smart Money',bottom:'Bottom Fish',volume:'Volume',momentum:'Momentum',orb:'ORB',relative_strength:'Rel. Strength'};
+
+  const ema20 = s.EMA20 ? '₹'+parseFloat(s.EMA20).toFixed(1) : '--';
+  const ema50 = s.EMA50 ? '₹'+parseFloat(s.EMA50).toFixed(1) : '--';
+  const rsi = s.RSI14 ? parseFloat(s.RSI14).toFixed(1) : '--';
+  const rsiClass = s.RSI14 ? (s.RSI14>70?'down':s.RSI14>50?'up':'mid') : '';
+  const deliv = s.DELIV_PER ? parseFloat(s.DELIV_PER).toFixed(1)+'%' : '--';
+  const vol = s.VOLUME_RATIO ? parseFloat(s.VOLUME_RATIO).toFixed(2)+'×' : '--';
+
+  return `<div class="scard${idx===0?' top1':''}" >
+    ${idx===0?'<div class="rank-badge">🔬 #1 TOP PICK</div>':''}
+    <div class="scard-top">
+      <div>
+        <div class="s-sym">${s.SYMBOL||'--'}</div>
+        <div class="s-name">${s.SERIES||'EQ'} · NSE</div>
+        <span class="s-scanner ${scClass}">${scLabels[scanner]||scanner}</span>
+      </div>
+      <div>
+        <div class="s-price">${s.CLOSE?'₹'+parseFloat(s.CLOSE).toFixed(2):'--'}</div>
+        ${chgPct!==null?`<div class="${isUp?'s-chg-up':'s-chg-dn'}">${isUp?'+':''}${chgPct}%</div>`:''}
+      </div>
+    </div>
+    <div class="kv-grid">
+      <div class="kv"><div class="kk">EMA 20</div><div class="kval">${ema20}</div></div>
+      <div class="kv"><div class="kk">EMA 50</div><div class="kval">${ema50}</div></div>
+      <div class="kv"><div class="kk">RSI 14</div><div class="kval ${rsiClass}">${rsi}</div></div>
+      <div class="kv"><div class="kk">Delivery</div><div class="kval">${deliv}</div></div>
+      <div class="kv"><div class="kk">Vol Ratio</div><div class="kval">${vol}</div></div>
+      <div class="kv"><div class="kk">Prev Close</div><div class="kval">${s.PREVCLOSE?'₹'+parseFloat(s.PREVCLOSE).toFixed(2):'--'}</div></div>
+    </div>
+  </div>`;
+}
+
+function showError(title, msg){
+  document.getElementById('resultsArea').innerHTML = `<div class="err-box"><b>${title}</b><br><br>${msg}</div>`;
+}
+</script>
+</body>
+</html>
