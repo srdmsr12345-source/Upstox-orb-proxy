@@ -7,6 +7,11 @@ from config import (
 
 
 class SmartMoneyScanner:
+    """
+    Smart Money: high volume + high delivery% + green candle - institutional
+    accumulation ka signal. AVG_VOL_20 history se aata hai (real 20-day
+    average), single-day data se fake calculate nahi hota ab.
+    """
 
     def __init__(self):
         pass
@@ -16,34 +21,15 @@ class SmartMoneyScanner:
         df = df.copy()
         df.columns = df.columns.str.strip()
 
-        volume_col = None
-        delivery_col = None
-
-        for col in df.columns:
-            name = col.upper()
-
-            if "TOTTRDQTY" in name:
-                volume_col = col
-
-            if "DELIV" in name:
-                delivery_col = col
-
-        if volume_col is None:
+        if "TOTTRDQTY" not in df.columns or "AVG_VOL_20" not in df.columns:
             return pd.DataFrame()
 
-        df["AVG_VOLUME"] = (
-            df[volume_col]
-            .rolling(20)
-            .mean()
-        )
-
         df["VOLUME_RATIO"] = (
-            df[volume_col]
-            / df["AVG_VOLUME"]
-        )
+            df["TOTTRDQTY"] / df["AVG_VOL_20"]
+        ).replace([float("inf"), -float("inf")], 0).fillna(0)
 
-        if delivery_col is not None:
-            df["DELIVERY_PERCENT"] = df[delivery_col]
+        if "DELIV_PER" in df.columns:
+            df["DELIVERY_PERCENT"] = df["DELIV_PER"]
         else:
             df["DELIVERY_PERCENT"] = 0
 
@@ -61,18 +47,10 @@ class SmartMoneyScanner:
 
         df = df.copy()
 
-        score = 0
-
-        score += (
-            (df["VOLUME_RATIO"] >= 2.5).astype(int) * 40
-        )
-
-        score += (
-            (df["DELIVERY_PERCENT"] >= 60).astype(int) * 35
-        )
-
-        score += (
-            (df["CLOSE"] > df["OPEN"]).astype(int) * 25
+        score = (
+            ((df["VOLUME_RATIO"] >= 2.5).astype(int) * 40)
+            + ((df["DELIVERY_PERCENT"] >= 60).astype(int) * 35)
+            + ((df["CLOSE"] > df["OPEN"]).astype(int) * 25)
         )
 
         df["SMART_SCORE"] = score
@@ -97,3 +75,4 @@ class SmartMoneyScanner:
 
 
 smartmoney_scanner = SmartMoneyScanner()
+            
