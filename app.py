@@ -33,8 +33,8 @@ from config import (
     PREFILTER_MIN_TURNOVER_LAKH,
     PREFILTER_MAX_CANDIDATES,
 )
-from modules.nse import NSEDataModule
-from modules.upstox import UpstoxModule
+from modules.nse import NSEData as NSEDataModule
+from modules.upstox import UpstoxAPI as UpstoxModule
 from modules.history import build_history_fetcher
 from modules.ai import ai_ranker
 from modules.cache import cache
@@ -79,7 +79,7 @@ def build_instrument_map(upstox, symbols):
     """
     inst_map = {}
     try:
-        instruments = upstox.get_instruments("NSE_EQ")
+        instruments = upstox.get_instruments()
         for inst in instruments:
             sym = (inst.get("trading_symbol") or inst.get("tradingsymbol") or "").strip().upper()
             key = inst.get("instrument_key", "")
@@ -312,7 +312,8 @@ def scan():
                 if not ikey:
                     continue
                 try:
-                    candles = upstox.get_intraday_candles(ikey, "1minute")
+                    resp = upstox.get_intraday(ikey, "1minute")
+                    candles = resp.get("data", {}).get("candles", []) if isinstance(resp, dict) else []
                     if candles and len(candles) >= 15:
                         orb_candles = [c for c in candles
                                        if "09:15" <= c[0][11:16] <= "09:30"]
