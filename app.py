@@ -121,6 +121,13 @@ def run_scanners(df):
 
 # ── ROUTES ────────────────────────────────────────────────────────────────────
 
+@app.route("/init", methods=["GET"])
+def init_page():
+    """Init tool page serve karta hai."""
+    from flask import render_template
+    return render_template("init-tool.html")
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "healthy"})
@@ -364,4 +371,3 @@ def scan():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-  
