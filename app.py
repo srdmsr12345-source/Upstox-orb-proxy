@@ -54,25 +54,21 @@ def is_market_open():
 def get_quality_stocks(upstox, exchange="NSE_EQ"):
     """
     Upstox instrument list se quality stocks filter karta hai.
-    - EQ series only
-    - Price >= 20
-    - No penny/junk stocks
-    Returns: list of {symbol, instrument_key, exchange}
+    upstox.get_instruments() already NSE_EQ filtered list deta hai
+    format: [{symbol, name, isin, instrument_key, exchange, ...}]
     """
     instruments = upstox.get_instruments()
     quality = []
     for inst in instruments:
-        seg  = inst.get("segment", "")
-        itype = inst.get("instrument_type", "")
-        sym  = (inst.get("trading_symbol") or inst.get("tradingsymbol") or "").strip().upper()
-        key  = inst.get("instrument_key", "")
-
-        # NSE EQ only (exclude BE, SM, BZ series — illiquid/operator stocks)
-        if seg == "NSE_EQ" and itype == "EQ" and sym and key:
-            quality.append({"symbol": sym, "instrument_key": key, "exchange": "NSE"})
-        # BSE EQ only (A group — quality stocks)
-        elif seg == "BSE_EQ" and itype == "EQ" and sym and key:
-            quality.append({"symbol": sym, "instrument_key": key, "exchange": "BSE"})
+        sym = (inst.get("symbol") or inst.get("trading_symbol") or
+               inst.get("tradingsymbol") or "").strip().upper()
+        key = inst.get("instrument_key", "")
+        if sym and key:
+            quality.append({
+                "symbol": sym,
+                "instrument_key": key,
+                "exchange": "NSE"
+            })
 
     print(f"[INFO] Quality stocks: {len(quality)}")
     return quality
@@ -368,3 +364,4 @@ def scan():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+  
