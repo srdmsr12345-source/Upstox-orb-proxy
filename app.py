@@ -163,33 +163,49 @@ def status():
     })
 
 
+import threading
+_init_status = {"running": False, "done": 0, "total": 0, "message": "idle"}
+
 @app.route("/init-history", methods=["POST"])
 def init_history():
-    """
-    Pehli baar chalao — 90 days history fetch karke GitHub pe store karo.
-    Ek baar karo, phir /daily-update se sirf aaj ka candle update hoga.
-    """
+    global _init_status
+    if _init_status["running"]:
+        return jsonify({"success": True, "status": _init_status,
+                        "message": "Already running — /init-status se progress dekho"})
+
     token = get_token()
     if not token:
         return jsonify({"success": False, "error": "Token missing"}), 401
 
-    t0 = time.time()
-    try:
-        upstox  = UpstoxAPI(token)
-        manager = build_history_manager(token)
-        stocks  = get_quality_stocks(upstox)
+    def run_bg():
+        global _init_status
+        _init_status = {"running": True, "done": 0, "total": 0, "message": "Starting..."}
+        try:
+            upstox  = UpstoxAPI(token)
+            manager = build_history_manager(token)
+            stocks  = get_quality_stocks(upstox)
+            _init_status["total"] = len(stocks)
+            _init_status["message"] = f"{len(stocks)} stocks mili, history fetch ho rahi hai..."
 
-        done = manager.bulk_init(stocks, exchange="NSE")
-        elapsed = round(time.time() - t0, 1)
-        return jsonify({
-            "success": True,
-            "stocks_processed": done,
-            "elapsed_seconds": elapsed,
-            "message": "History initialized! Ab /daily-update se roz update karo."
-        })
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+            def prog(done, total, msg=""):
+                _init_status["done"] = done
+                _init_status["message"] = msg or f"{done}/{total} done"
+
+            manager.bulk_init(stocks, exchange="NSE", progress_cb=prog)
+            _init_status["running"] = False
+            _init_status["message"] = "✓ Complete!"
+        except Exception as e:
+            _init_status["running"] = False
+            _init_status["message"] = f"Error: {e}"
+
+    threading.Thread(target=run_bg, daemon=True).start()
+    return jsonify({"success": True,
+                    "message": "Background mein shuru ho gaya! /init-status se progress dekho."})
+
+
+@app.route("/init-status", methods=["GET"])
+def init_status_route():
+    return jsonify(_init_status)
 
 
 @app.route("/daily-update", methods=["POST"])
@@ -371,3 +387,4 @@ def scan():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+  
