@@ -1,23 +1,11 @@
 """
-History Module
-===============
-Pehle wala bug yeh tha ki EMA/RSI/Stage2/ORB/SmartMoney scanners ek
-single-day bhav-copy (jisme har stock ka sirf EK row hota hai) par
-.rolling(20) aur .ewm() jaisi time-series calculations laga rahe the -
-yeh silently galat (ya hamesha NaN/same-value) results deta hai, kyunki
-rolling window ka matlab hi nahi banta jab har "group" mein sirf 1 row ho.
+History Module — Incremental Update
+=====================================
+Pehli baar: 90 days bulk fetch → GitHub store
+Roz: Sirf aaj ka candle fetch → append to GitHub
+Scan: GitHub se load → EMA/RSI calculate
 
-Yeh module Upstox Historical Candle API se HAR stock ka asli 60-din ka
-daily OHLCV data fetch karta hai, aur usi history se EMA20/EMA50/RSI14/
-20-day-avg-volume sahi tarike se calculate karta hai - phir result ko
-bhav-copy ke single-day row ke saath merge kar dete hain taaki scanners
-ko sahi numbers milein.
-
-Performance ke liye: saare ~2000 stocks ke liye history fetch karna bahut
-slow/risky hai (rate limits + 2000 sequential calls). Isliye app.py mein
-pehle bhav-copy se basic filter (price/volume) laga ke list chhoti karte
-hain (~150-400 stocks), phir unhi ke liye yeh module history fetch karta
-hai, parallel threads ke saath taaki time kam lage.
+Isse Upstox API pe minimal load padta hai.
 """
 
 import time
@@ -26,137 +14,194 @@ import pandas as pd
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from modules.cache import cache
-from modules.utils import ema, rsi, sma
+from modules.datastore import (
+    read_stock, write_stock, append_candle,
+    read_meta, write_meta, list_stored_symbols
+)
 
-UPSTOX_BASE = "https://api.upstox.com"
-
-# Kitne dino ka history chahiye - EMA50 ke liye kam se kam 50+ trading
-# din chahiye taaki EMA stabilize ho jaye, isliye 90 calendar din maangte
-# hain (~60-65 trading din milte hain weekends/holidays minus karke).
+UPSTOX_BASE  = "https://api.upstox.com"
+MAX_WORKERS  = 6
 HISTORY_DAYS = 90
 
-# Ek saath kitne parallel requests bhejne hain - zyada se rate limit lag
-# sakta hai, kam se scan bahut slow ho jayega. 8 reasonable balance hai.
-MAX_WORKERS = 8
 
-# Har request ke beech chhota gap (seconds) - Upstox rate limit se bachne
-# ke liye. Upstox free tier ~25 req/sec allow karta hai per user.
-REQUEST_DELAY = 0.05
-
-
-class HistoryFetcher:
+class HistoryManager:
 
     def __init__(self, access_token):
-        self.access_token = access_token
+        self.token = access_token
         self.headers = {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
         }
 
-    def _date_range(self):
-        to_date = datetime.now().strftime("%Y-%m-%d")
-        from_date = (datetime.now() - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d")
-        return to_date, from_date
+    # ── FETCH FROM UPSTOX ──────────────────────────────────────────────
 
-    def fetch_one(self, instrument_key):
-        """Single stock ke liye daily candles fetch karta hai (cached)."""
-
-        cache_key = f"hist_{instrument_key.replace('|', '_').replace(':', '_')}"
-        cached = cache.get(cache_key, max_age=6 * 3600)  # 6 hour cache
-        if cached is not None:
-            return instrument_key, cached
-
-        to_date, from_date = self._date_range()
-        url = f"{UPSTOX_BASE}/v2/historical-candle/{instrument_key}/day/{to_date}/{from_date}"
-
+    def _fetch_candles(self, instrument_key, days=HISTORY_DAYS):
+        """Upstox se daily candles fetch karta hai."""
+        to_date   = datetime.now().strftime("%Y-%m-%d")
+        from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        url = (f"{UPSTOX_BASE}/v2/historical-candle/"
+               f"{instrument_key}/day/{to_date}/{from_date}")
         try:
             r = requests.get(url, headers=self.headers, timeout=15)
-            time.sleep(REQUEST_DELAY)
-
+            time.sleep(0.05)  # Rate limit protection
             if r.status_code != 200:
-                return instrument_key, None
-
+                return None
             data = r.json()
             if data.get("status") != "success":
-                return instrument_key, None
-
+                return None
             candles = data.get("data", {}).get("candles", [])
             if not candles:
-                return instrument_key, None
-
-            # Candles aate hain latest-first, hum ascending (purana->naya) order
-            # chahte hain taaki rolling/ewm calculations sahi direction mein chalein.
+                return None
+            # Ascending order (purana → naya)
             candles = sorted(candles, key=lambda c: c[0])
-
-            df = pd.DataFrame(candles, columns=[
-                "timestamp", "open", "high", "low", "close", "volume", "oi"
-            ])
-
-            cache.save(cache_key, df.to_dict("records"))
-            return instrument_key, df.to_dict("records")
-
-        except Exception:
-            return instrument_key, None
-
-    def fetch_many(self, instrument_keys, progress_callback=None):
-        """
-        Multiple stocks ke liye parallel mein history fetch karta hai.
-        Returns: { instrument_key: DataFrame or None }
-        """
-        results = {}
-        total = len(instrument_keys)
-        done = 0
-
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(self.fetch_one, key): key
-                for key in instrument_keys
-            }
-
-            for future in as_completed(futures):
-                key, records = future.result()
-                if records is not None:
-                    results[key] = pd.DataFrame(records)
-                else:
-                    results[key] = None
-
-                done += 1
-                if progress_callback:
-                    progress_callback(done, total)
-
-        return results
-
-    @staticmethod
-    def compute_indicators(history_df):
-        """
-        Ek stock ke historical DataFrame se EMA20, EMA50, RSI14, aur
-        20-day average volume calculate karta hai - sirf AAKHRI (latest)
-        din ki values return karta hai, kyunki scanner ko sirf "abhi"
-        ke indicator values chahiye, poori series nahi.
-        """
-        if history_df is None or history_df.empty or len(history_df) < 5:
+            return [
+                {
+                    "date":   c[0][:10],  # YYYY-MM-DD
+                    "open":   float(c[1]),
+                    "high":   float(c[2]),
+                    "low":    float(c[3]),
+                    "close":  float(c[4]),
+                    "volume": int(c[5]),
+                }
+                for c in candles
+            ]
+        except Exception as e:
+            print(f"[WARN] fetch_candles {instrument_key}: {e}")
             return None
 
-        df = history_df.copy()
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
-        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+    # ── BULK INIT (Pehli Baar) ─────────────────────────────────────────
 
-        df["EMA20"] = ema(df["close"], 20)
-        df["EMA50"] = ema(df["close"], 50)
-        df["RSI14"] = rsi(df["close"], 14)
-        df["AVG_VOL_20"] = sma(df["volume"], 20)
+    def bulk_init(self, stocks, exchange="NSE", progress_cb=None):
+        """
+        Pehli baar: saare stocks ka 90-day history fetch karke
+        GitHub pe store karta hai. Ek baar karo, phir daily updates.
+
+        stocks: list of {"symbol": "RELIANCE", "instrument_key": "NSE_EQ|..."}
+        """
+        already_stored = set(list_stored_symbols(exchange))
+        to_fetch = [s for s in stocks
+                    if s["symbol"] not in already_stored]
+
+        print(f"[INFO] bulk_init: {len(already_stored)} already stored, "
+              f"{len(to_fetch)} to fetch")
+
+        done = 0
+        total = len(to_fetch)
+
+        def fetch_and_store(stock):
+            candles = self._fetch_candles(stock["instrument_key"])
+            if candles:
+                write_stock(exchange, stock["symbol"], candles)
+                return stock["symbol"], True
+            return stock["symbol"], False
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            futures = {ex.submit(fetch_and_store, s): s for s in to_fetch}
+            for future in as_completed(futures):
+                sym, ok = future.result()
+                done += 1
+                if progress_cb:
+                    progress_cb(done, total,
+                                f"Init: {sym} {'✓' if ok else '✗'}")
+
+        # Meta update
+        meta = read_meta()
+        meta["last_bulk_init"] = datetime.now().strftime("%Y-%m-%d")
+        meta["total_symbols"]  = len(already_stored) + done
+        write_meta(meta)
+        return done
+
+    # ── DAILY UPDATE (Roz) ─────────────────────────────────────────────
+
+    def daily_update(self, stocks, exchange="NSE", progress_cb=None):
+        """
+        Roz chalao: sirf aaj ka 1 candle fetch karo aur GitHub pe append.
+        2000 stocks × 1 call = bahut fast (2-3 minutes).
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        meta  = read_meta()
+
+        if meta.get("last_daily_update") == today:
+            print(f"[INFO] Already updated today ({today}), skip")
+            return 0
+
+        done = 0
+        total = len(stocks)
+
+        def update_one(stock):
+            # Sirf aaj ka candle chahiye — last 5 days fetch karo
+            # (weekend/holiday ke liye safety margin)
+            candles = self._fetch_candles(stock["instrument_key"], days=5)
+            if not candles:
+                return False
+            latest = candles[-1]  # Most recent candle
+            if latest["date"] == today:
+                return append_candle(exchange, stock["symbol"], latest)
+            return False
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            futures = {ex.submit(update_one, s): s for s in stocks}
+            for future in as_completed(futures):
+                ok = future.result()
+                done += 1
+                if progress_cb and done % 50 == 0:
+                    progress_cb(done, total, f"Daily update: {done}/{total}")
+
+        meta["last_daily_update"] = today
+        write_meta(meta)
+        return done
+
+    # ── COMPUTE INDICATORS ─────────────────────────────────────────────
+
+    @staticmethod
+    def compute_indicators(exchange, symbol):
+        """
+        GitHub se history load karke EMA20/EMA50/RSI14/AVG_VOL_20 calculate.
+        Returns: dict of indicators ya None
+        """
+        candles = read_stock(exchange, symbol)
+        if not candles or len(candles) < 5:
+            return None
+
+        df = pd.DataFrame(candles)
+        df["close"]  = pd.to_numeric(df["close"],  errors="coerce")
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+        df["high"]   = pd.to_numeric(df["high"],   errors="coerce")
+        df["low"]    = pd.to_numeric(df["low"],    errors="coerce")
+
+        # EMA
+        df["EMA20"] = df["close"].ewm(span=20, adjust=False).mean()
+        df["EMA50"] = df["close"].ewm(span=50, adjust=False).mean()
+
+        # RSI 14
+        delta = df["close"].diff()
+        gain  = delta.clip(lower=0).rolling(14).mean()
+        loss  = (-delta.clip(upper=0)).rolling(14).mean()
+        rs    = gain / loss.replace(0, float("nan"))
+        df["RSI14"] = 100 - (100 / (1 + rs))
+
+        # Average Volume (20 day)
+        df["AVG_VOL_20"] = df["volume"].rolling(20).mean()
+
+        # 120-day low
+        low_120 = df["low"].min() if len(df) >= 20 else df["low"].min()
+
+        # 20-day ago close
+        close_20d = (df["close"].iloc[-21]
+                     if len(df) >= 21 else df["close"].iloc[0])
 
         last = df.iloc[-1]
-
         return {
-            "EMA20": float(last["EMA20"]) if pd.notna(last["EMA20"]) else None,
-            "EMA50": float(last["EMA50"]) if pd.notna(last["EMA50"]) else None,
-            "RSI14": float(last["RSI14"]) if pd.notna(last["RSI14"]) else None,
-            "AVG_VOL_20": float(last["AVG_VOL_20"]) if pd.notna(last["AVG_VOL_20"]) else None,
-            "HISTORY_DAYS_AVAILABLE": len(df),
+            "EMA20":        round(float(last["EMA20"]),  2) if pd.notna(last["EMA20"])  else None,
+            "EMA50":        round(float(last["EMA50"]),  2) if pd.notna(last["EMA50"])  else None,
+            "RSI14":        round(float(last["RSI14"]),  2) if pd.notna(last["RSI14"])  else None,
+            "AVG_VOL_20":   round(float(last["AVG_VOL_20"]), 0) if pd.notna(last["AVG_VOL_20"]) else None,
+            "LOW_120":      round(float(low_120), 2),
+            "CLOSE_20D_AGO":round(float(close_20d), 2),
+            "DAYS_STORED":  len(df),
         }
 
 
-def build_history_fetcher(access_token):
-    return HistoryFetcher(access_token)
+def build_history_manager(access_token):
+    return HistoryManager(access_token)
+                 
