@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scanner Init Tool</title>
+<style>
+body{font-family:monospace;background:#000;color:#0f0;padding:16px;font-size:13px}
+input{width:100%;padding:10px;margin:6px 0;background:#111;color:#0f0;border:1px solid #0f0;font-family:monospace}
+button{width:100%;padding:12px;margin:6px 0;font-weight:bold;font-size:14px;cursor:pointer;border:none;font-family:monospace}
+.btn-init{background:#ff6600;color:#000}
+.btn-update{background:#0080ff;color:#fff}
+.btn-status{background:#333;color:#0f0;border:1px solid #0f0}
+.btn-scan{background:#00aa00;color:#000}
+#log{background:#111;border:1px solid #333;padding:12px;margin-top:10px;min-height:100px;white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:400px;overflow-y:auto}
+</style>
+</head>
+<body>
+<h2>🔧 Scanner Admin Tool</h2>
+<input id="proxy" placeholder="Proxy URL (https://upstox-orb-proxy.onrender.com)">
+<input type="password" id="token" placeholder="Upstox Access Token">
+<button class="btn-status" onclick="callAPI('/status','GET')">📊 Status Check</button>
+<button class="btn-init" onclick="callAPI('/init-history','POST')">🚀 Init History (Pehli Baar - 20-30 min)</button>
+<button class="btn-update" onclick="callAPI('/daily-update','POST')">📅 Daily Update (Roz - 2-3 min)</button>
+<button class="btn-scan" onclick="callAPI('/scan','POST')">🔬 Scan Karo</button>
+<div id="log">Logs yahan dikhenge...</div>
+<script>
+window.onload=()=>{
+  const p=localStorage.getItem('upstox_proxy')||'';
+  const t=localStorage.getItem('upstox_token')||'';
+  if(p) document.getElementById('proxy').value=p;
+  if(t) document.getElementById('token').value=t;
+}
+async function callAPI(path, method){
+  const proxy=document.getElementById('proxy').value.trim().replace(/\/+$/,'');
+  const token=document.getElementById('token').value.trim();
+  if(!proxy||!token){log('⚠️ Proxy URL aur Token dono daalo!');return;}
+  localStorage.setItem('upstox_proxy',proxy);
+  localStorage.setItem('upstox_token',token);
+  const url=proxy+path;
+  log('▶ '+method+' '+url);
+  log('⏳ Wait karo...');
+  const start=Date.now();
+  try{
+    const r=await fetch(url,{
+      method,
+      headers:{
+        'Authorization':'Bearer '+token,
+        'Content-Type':'application/json'
+      },
+      body:method==='POST'?JSON.stringify({}):undefined
+    });
+    const data=await r.json();
+    const sec=((Date.now()-start)/1000).toFixed(1);
+    log('✓ Response in '+sec+'s (HTTP '+r.status+'):');
+    log(JSON.stringify(data,null,2));
+  }catch(e){
+    log('✗ Error: '+e.message);
+  }
+}
+function log(msg){
+  const el=document.getElementById('log');
+  el.textContent+='\n'+new Date().toLocaleTimeString()+' '+msg;
+  el.scrollTop=el.scrollHeight;
+}
+</script>
+</body>
+  </html>
+  
