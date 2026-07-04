@@ -258,11 +258,10 @@ def scan():
         return jsonify({"success": False, "error": "Token missing"}), 401
 
     t0 = time.time()
-    # Memory cache clear mat karo — jo pehle se loaded hai use karo
-    # GitHub se naya fetch scan ke dauran nahi karenge (OOM/timeout prevent)
 
     try:
         upstox = UpstoxAPI(token)
+        stocks = get_quality_stocks(upstox)
 
         # ── TODAY'S LIVE DATA (Upstox bulk quotes) ──────────────────────
         quote_map = {}
