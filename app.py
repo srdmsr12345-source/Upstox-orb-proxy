@@ -258,38 +258,11 @@ def scan():
         return jsonify({"success": False, "error": "Token missing"}), 401
 
     t0 = time.time()
-    clear_memory_cache()
+    # Memory cache clear mat karo — jo pehle se loaded hai use karo
+    # GitHub se naya fetch scan ke dauran nahi karenge (OOM/timeout prevent)
 
     try:
         upstox = UpstoxAPI(token)
-        stocks = get_quality_stocks(upstox)
-
-        # ── PRELOAD HISTORY FROM GITHUB (bulk, before quotes) ───────────
-        # Stored symbols ki list GitHub se lo (sirf filenames, data nahi)
-        # Phir unhe parallel mein memory mein load karo
-        prog_msg = "[INFO] Preloading history from GitHub..."
-        print(prog_msg)
-        stored_syms = list_stored_symbols("NSE")
-        print(f"[INFO] {len(stored_syms)} symbols stored in GitHub")
-
-        if stored_syms:
-            from modules.datastore import read_stock
-            import concurrent.futures
-
-            def safe_read(sym):
-                try:
-                    read_stock("NSE", sym)
-                    return True
-                except Exception:
-                    return False
-
-            # 20 parallel threads, max 20 seconds total
-            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
-                futs = {ex.submit(safe_read, s): s for s in stored_syms}
-                done = 0
-                for f in concurrent.futures.as_completed(futs, timeout=20):
-                    done += 1
-            print(f"[INFO] Preloaded {done} stocks into memory")
 
         # ── TODAY'S LIVE DATA (Upstox bulk quotes) ──────────────────────
         quote_map = {}
@@ -429,3 +402,4 @@ def scan():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+  
