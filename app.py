@@ -76,26 +76,63 @@ def get_quality_stocks(upstox, exchange="NSE_EQ"):
 
 def inject_indicators(df, exchange="NSE"):
     """
-    DataFrame mein EMA20/EMA50/RSI14/AVG_VOL_20/LOW_120 inject karta hai
-    GitHub stored history se.
+    DataFrame mein EMA20/EMA50/RSI14/AVG_VOL_20/LOW_120 inject karta hai.
+    IMPORTANT: GitHub se ek-ek API call karne ki jagah, pehle saare
+    stored symbols ko memory cache mein load karo (bulk), phir DataFrame
+    mein inject karo. Warna 1856 sequential HTTP requests se timeout.
     """
     from modules.history import HistoryManager
+    from modules.datastore import read_stock, _memory_cache
 
+    # Pehle check karo kitne symbols already memory mein hain
+    symbols = df["SYMBOL"].dropna().unique().tolist()
+    cached_count = sum(1 for s in symbols
+                       if f"{exchange}_{s}" in _memory_cache)
+    print(f"[INFO] inject_indicators: {len(symbols)} symbols, "
+          f"{cached_count} already in memory cache")
+
+    # Sirf wahi symbols fetch karo jo memory mein nahi hain
+    # Parallel fetch use karo taaki fast ho
+    to_fetch = [s for s in symbols
+                if f"{exchange}_{s}" not in _memory_cache]
+
+    if to_fetch:
+        import threading
+        def fetch_batch(syms):
+            for sym in syms:
+                read_stock(exchange, sym)  # auto-caches in _memory_cache
+
+        # 10 parallel threads mein fetch karo
+        chunk_size = max(1, len(to_fetch) // 10)
+        threads = []
+        for i in range(0, len(to_fetch), chunk_size):
+            t = threading.Thread(
+                target=fetch_batch,
+                args=(to_fetch[i:i+chunk_size],)
+            )
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join(timeout=25)  # Max 25 sec wait
+
+        print(f"[INFO] Fetched {len(to_fetch)} symbols from GitHub")
+
+    # Ab sab memory mein hai — compute indicators
     indicators_map = {}
-    for _, row in df.iterrows():
-        sym = row.get("SYMBOL", "")
-        if sym:
-            ind = HistoryManager.compute_indicators(exchange, sym)
-            if ind:
-                indicators_map[sym] = ind
+    for sym in symbols:
+        ind = HistoryManager.compute_indicators(exchange, sym)
+        if ind:
+            indicators_map[sym] = ind
+
+    print(f"[INFO] Indicators computed: {len(indicators_map)} stocks")
 
     df = df.copy()
-    df["EMA20"]        = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("EMA20"))
-    df["EMA50"]        = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("EMA50"))
-    df["RSI14"]        = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("RSI14"))
-    df["AVG_VOL_20"]   = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("AVG_VOL_20"))
-    df["LOW_120"]      = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("LOW_120"))
-    df["CLOSE_20D_AGO"]= df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("CLOSE_20D_AGO"))
+    df["EMA20"]         = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("EMA20"))
+    df["EMA50"]         = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("EMA50"))
+    df["RSI14"]         = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("RSI14"))
+    df["AVG_VOL_20"]    = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("AVG_VOL_20"))
+    df["LOW_120"]       = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("LOW_120"))
+    df["CLOSE_20D_AGO"] = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("CLOSE_20D_AGO"))
     return df
 
 
