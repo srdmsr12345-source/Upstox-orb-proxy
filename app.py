@@ -76,55 +76,25 @@ def get_quality_stocks(upstox, exchange="NSE_EQ"):
 
 def inject_indicators(df, exchange="NSE"):
     """
-    DataFrame mein EMA20/EMA50/RSI14/AVG_VOL_20/LOW_120 inject karta hai.
-    IMPORTANT: GitHub se ek-ek API call karne ki jagah, pehle saare
-    stored symbols ko memory cache mein load karo (bulk), phir DataFrame
-    mein inject karo. Warna 1856 sequential HTTP requests se timeout.
+    Sirf memory cache mein already stored data se indicators inject karta hai.
+    GitHub se naya fetch nahi karta (OOM prevent karne ke liye).
+    Jo stocks stored hain unke EMA/RSI milega, baaki ke liye None rahega.
     """
     from modules.history import HistoryManager
-    from modules.datastore import read_stock, _memory_cache
+    from modules.datastore import _memory_cache
 
-    # Pehle check karo kitne symbols already memory mein hain
     symbols = df["SYMBOL"].dropna().unique().tolist()
-    cached_count = sum(1 for s in symbols
-                       if f"{exchange}_{s}" in _memory_cache)
-    print(f"[INFO] inject_indicators: {len(symbols)} symbols, "
-          f"{cached_count} already in memory cache")
-
-    # Sirf wahi symbols fetch karo jo memory mein nahi hain
-    # Parallel fetch use karo taaki fast ho
-    to_fetch = [s for s in symbols
-                if f"{exchange}_{s}" not in _memory_cache]
-
-    if to_fetch:
-        import threading
-        def fetch_batch(syms):
-            for sym in syms:
-                read_stock(exchange, sym)  # auto-caches in _memory_cache
-
-        # 10 parallel threads mein fetch karo
-        chunk_size = max(1, len(to_fetch) // 10)
-        threads = []
-        for i in range(0, len(to_fetch), chunk_size):
-            t = threading.Thread(
-                target=fetch_batch,
-                args=(to_fetch[i:i+chunk_size],)
-            )
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join(timeout=25)  # Max 25 sec wait
-
-        print(f"[INFO] Fetched {len(to_fetch)} symbols from GitHub")
-
-    # Ab sab memory mein hai — compute indicators
     indicators_map = {}
+    found = 0
     for sym in symbols:
-        ind = HistoryManager.compute_indicators(exchange, sym)
-        if ind:
-            indicators_map[sym] = ind
+        cache_key = f"{exchange}_{sym}"
+        if cache_key in _memory_cache:
+            ind = HistoryManager.compute_indicators(exchange, sym)
+            if ind:
+                indicators_map[sym] = ind
+                found += 1
 
-    print(f"[INFO] Indicators computed: {len(indicators_map)} stocks")
+    print(f"[INFO] inject_indicators: {found}/{len(symbols)} stocks had cached history")
 
     df = df.copy()
     df["EMA20"]         = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("EMA20"))
@@ -293,6 +263,33 @@ def scan():
     try:
         upstox = UpstoxAPI(token)
         stocks = get_quality_stocks(upstox)
+
+        # ── PRELOAD HISTORY FROM GITHUB (bulk, before quotes) ───────────
+        # Stored symbols ki list GitHub se lo (sirf filenames, data nahi)
+        # Phir unhe parallel mein memory mein load karo
+        prog_msg = "[INFO] Preloading history from GitHub..."
+        print(prog_msg)
+        stored_syms = list_stored_symbols("NSE")
+        print(f"[INFO] {len(stored_syms)} symbols stored in GitHub")
+
+        if stored_syms:
+            from modules.datastore import read_stock
+            import concurrent.futures
+
+            def safe_read(sym):
+                try:
+                    read_stock("NSE", sym)
+                    return True
+                except Exception:
+                    return False
+
+            # 20 parallel threads, max 20 seconds total
+            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
+                futs = {ex.submit(safe_read, s): s for s in stored_syms}
+                done = 0
+                for f in concurrent.futures.as_completed(futs, timeout=20):
+                    done += 1
+            print(f"[INFO] Preloaded {done} stocks into memory")
 
         # ── TODAY'S LIVE DATA (Upstox bulk quotes) ──────────────────────
         quote_map = {}
