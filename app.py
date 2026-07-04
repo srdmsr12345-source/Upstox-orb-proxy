@@ -259,22 +259,30 @@ def scan():
 
         # ── TODAY'S LIVE DATA (Upstox bulk quotes) ──────────────────────
         quote_map = {}
+        sym_to_quote = {}  # symbol → quote data (easier lookup)
         keys = [s["instrument_key"] for s in stocks]
         for i in range(0, len(keys), 500):
             batch = keys[i:i+500]
             try:
                 resp = upstox.get_quotes(batch)
                 if isinstance(resp, dict) and resp.get("status") == "success":
-                    quote_map.update(resp.get("data", {}))
+                    data = resp.get("data", {})
+                    quote_map.update(data)
+                    # Build symbol-based lookup: "NSE_EQ:RELIANCE" → sym "RELIANCE"
+                    for k, v in data.items():
+                        sym = k.split(":")[-1] if ":" in k else k.split("|")[-1]
+                        sym_to_quote[sym.upper()] = v
             except Exception as e:
                 print(f"[WARN] quotes batch {i}: {e}")
             time.sleep(0.2)
 
+        print(f"[INFO] Quotes fetched: {len(quote_map)} total, {len(sym_to_quote)} unique symbols")
+
         # ── BUILD DATAFRAME ─────────────────────────────────────────────
         rows = []
         for s in stocks:
-            q = quote_map.get(s["instrument_key"]) or quote_map.get(
-                next((k for k in quote_map if s["symbol"] in k), ""), None)
+            # Symbol-based lookup (Upstox returns NSE_EQ:SYMBOL format keys)
+            q = sym_to_quote.get(s["symbol"]) or quote_map.get(s["instrument_key"])
             if not q:
                 continue
 
@@ -387,4 +395,3 @@ def scan():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-  
