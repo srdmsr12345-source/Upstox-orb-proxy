@@ -81,13 +81,16 @@ def write_stock(exchange, symbol, candles):
         json.dumps(candles, ensure_ascii=False).encode("utf-8")
     ).decode("utf-8")
 
-    # Existing file ka SHA chahiye update ke liye
+    # Existing file ka SHA chahiye update ke liye (409 Conflict avoid karne ke liye)
+    # GitHub API response mein file ka SHA root level pe hota hai
     sha = None
     try:
         r = requests.get(url, headers=_headers(),
                         params={"ref": GITHUB_BRANCH}, timeout=10)
         if r.status_code == 200:
-            sha = r.json().get("sha")
+            resp_json = r.json()
+            # SHA file object ke root mein hota hai (not inside content)
+            sha = resp_json.get("sha")
     except Exception:
         pass
 
