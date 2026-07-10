@@ -91,7 +91,7 @@ class HistoryManager:
         def fetch_and_store(stock):
             candles = self._fetch_candles(stock["instrument_key"])
             if candles:
-                write_stock(exchange, stock["symbol"], candles)
+                write_stock_bulk(exchange, stock["symbol"], candles)
                 return stock["symbol"], True
             return stock["symbol"], False
 
@@ -204,4 +204,3 @@ class HistoryManager:
 
 def build_history_manager(access_token):
     return HistoryManager(access_token)
-                 
