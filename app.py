@@ -21,7 +21,7 @@ from flask_cors import CORS
 from config import PREFILTER_MIN_PRICE, PREFILTER_MIN_TURNOVER_LAKH
 from modules.upstox import UpstoxAPI
 from modules.history import build_history_manager
-from modules.datastore import read_meta, list_stored_symbols, clear_memory_cache
+from modules.datastore import read_meta, list_stored_symbols, clear_memory_cache, get_stored_count
 from modules.ai import ai_ranker
 
 from plugins.stage2 import stage2_scanner
@@ -76,25 +76,30 @@ def get_quality_stocks(upstox, exchange="NSE_EQ"):
 
 def inject_indicators(df, exchange="NSE"):
     """
-    Sirf memory cache mein already stored data se indicators inject karta hai.
-    GitHub se naya fetch nahi karta (OOM prevent karne ke liye).
-    Jo stocks stored hain unke EMA/RSI milega, baaki ke liye None rahega.
+    Supabase se har stock ki history fetch karke EMA/RSI inject karta hai.
+    Sirf jo stocks Supabase mein stored hain unke indicators milenge.
     """
     from modules.history import HistoryManager
-    from modules.datastore import _memory_cache
+    from modules.datastore import read_stock, _memory_cache
 
     symbols = df["SYMBOL"].dropna().unique().tolist()
     indicators_map = {}
     found = 0
-    for sym in symbols:
-        cache_key = f"{exchange}_{sym}"
-        if cache_key in _memory_cache:
-            ind = HistoryManager.compute_indicators(exchange, sym)
-            if ind:
-                indicators_map[sym] = ind
-                found += 1
 
-    print(f"[INFO] inject_indicators: {found}/{len(symbols)} stocks had cached history")
+    # Batch mein fetch karo - 50 at a time to avoid timeout
+    batch_size = 50
+    for i in range(0, min(len(symbols), 500), batch_size):
+        batch = symbols[i:i+batch_size]
+        for sym in batch:
+            try:
+                ind = HistoryManager.compute_indicators(exchange, sym)
+                if ind:
+                    indicators_map[sym] = ind
+                    found += 1
+            except Exception:
+                pass
+
+    print(f"[INFO] inject_indicators: {found}/{len(symbols)} stocks had history")
 
     df = df.copy()
     df["EMA20"]         = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("EMA20"))
@@ -104,7 +109,6 @@ def inject_indicators(df, exchange="NSE"):
     df["LOW_120"]       = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("LOW_120"))
     df["CLOSE_20D_AGO"] = df["SYMBOL"].map(lambda s: indicators_map.get(s, {}).get("CLOSE_20D_AGO"))
     return df
-
 
 def run_scanners(df):
     results = {}
@@ -157,16 +161,12 @@ def home():
 @app.route("/status", methods=["GET"])
 def status():
     """System ka current status — kitne stocks stored hain."""
-    meta = read_meta()
-    nse_count = len(list_stored_symbols("NSE"))
-    bse_count = len(list_stored_symbols("BSE"))
+    from modules.datastore import get_stored_count
+    total = get_stored_count()
     return jsonify({
         "status": "ok",
-        "nse_stored": nse_count,
-        "bse_stored": bse_count,
-        "total_stored": nse_count + bse_count,
-        "last_bulk_init": meta.get("last_bulk_init", "never"),
-        "last_daily_update": meta.get("last_daily_update", "never"),
+        "total_rows_in_supabase": total,
+        "message": "Supabase mein stored rows"
     })
 
 
